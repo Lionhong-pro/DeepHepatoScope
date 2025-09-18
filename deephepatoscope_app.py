@@ -432,10 +432,10 @@ dcc.Store(id="custom-input-store", storage_type="memory"),
 def upload_target(n_clicks):
     print("Loading CosMx example...")
     import os
-    # target_data = sc.read_h5ad("adata_demo2.h5ad") #spatial_data_2
+    # target_data = sc.read_h5ad("CosMx_demo_2775cells_1000genes.h5ad") #spatial_data_2
     # target_data_dict = encode_anndata(target_data)
-    filename = os.path.join(os.path.dirname(__file__), "example_data", "adata_demo2.h5ad")
-    return f"Uploaded Target File: adata_demo2.h5ad", "Dataset uploaded successfully!", {
+    filename = os.path.join(os.path.dirname(__file__), "example_data", "CosMx_demo_2775cells_1000genes.h5ad")
+    return f"Uploaded Target File: CosMx_demo_2775cells_1000genes.h5ad", "Dataset uploaded successfully!", {
         "width": "100%",
         "height": "60px",
         "lineHeight": "60px",
@@ -462,10 +462,10 @@ def upload_target(n_clicks):
 def upload_target(n_clicks):
     print("Loading Xenium example...")
     import os
-    # target_data = sc.read_h5ad("Xenium_demo_final.h5ad") #spatial_data_2
+    # target_data = sc.read_h5ad("Xenium_demo_16883cells_474genes.h5ad") #spatial_data_2
     # target_data_dict = encode_anndata(target_data)
-    filename = os.path.join(os.path.dirname(__file__), "example_data", "Xenium_demo_final.h5ad")
-    return f"Uploaded Target File: Xenium_demo_final.h5ad", "Dataset uploaded successfully!", {
+    filename = os.path.join(os.path.dirname(__file__), "example_data", "Xenium_demo_16883cells_474genes.h5ad")
+    return f"Uploaded Target File: Xenium_demo_16883cells_474genes.h5ad", "Dataset uploaded successfully!", {
         "width": "100%",
         "height": "60px",
         "lineHeight": "60px",
@@ -1122,7 +1122,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         # adata_spatial = decode_dict(target_data_store["target_data"])
         adata_spatial = sc.read_h5ad(target_data_store["filename"])
         if model_check=="cosmx":
-            #adata_spatial = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_codes\adata_demo2.h5ad")
+            #adata_spatial = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_codes\CosMx_demo_2775cells_1000genes.h5ad")
             n_genes = 850
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_CosMx850_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
             model_path = os.path.join(os.path.dirname(__file__), "model_weights", "CosMx_850genes_modelweights_100epochs.pt")
