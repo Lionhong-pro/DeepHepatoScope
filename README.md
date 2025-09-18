@@ -11,8 +11,8 @@ We recommend running DeepHepatoScope in a virtual environment.
 
 * Clone this repository:
 ```
-git clone https://github.com/Lionhong-pro/DeepHepatoScope-Supplementary-Data.git
-cd DeepHepatoScope-Supplementary-Data
+git clone https://github.com/Lionhong-pro/DeepHepatoScope.git
+cd DeepHepatoScope
 ```
 * Create and activate a virtual environment:
 ```
