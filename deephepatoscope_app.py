@@ -1198,7 +1198,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
                     output = output[0]
                 all_preds.append(output.cpu())
                 i += 1
-                # if i %1 == 0:
+                # if i % 1 == 0:
                 #     print(i)
 
         # Combine predictions
@@ -1248,7 +1248,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             "Cholangiocytes": "#c5b0d5",
             "Unclassified": "#8c564b",
             # Newly added entries
-            "Mast cells": "#e377c2",                     # magenta
+            "Mast cells": "#e377c2",                      # magenta
             "Dendritic cells": "#7f7f7f",                 # grey
             "CAFs": "#bcbd22",                            # olive
             "Myofibroblasts": "#17becf",                  # cyan
