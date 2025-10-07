@@ -191,7 +191,6 @@ class TransformerClassifier(nn.Module):
         self.hidden_dim = hidden_dim
         self.seq_len = seq_len
 
-        # I trust GPT
         self.W = nn.Parameter(torch.randn(seq_len, 1, hidden_dim))
         self.b = nn.Parameter(torch.zeros(seq_len, hidden_dim))
 
