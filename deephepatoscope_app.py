@@ -585,10 +585,10 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         from scipy.spatial import ConvexHull
         print("model_check:", model_check)
         if model_check=="cosmx":
-            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "CosMx_850genes_attentionweights_300epochs.npy"))
+            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "CosMx_850genes_attentionweights_300epochs.npz"))["CosMx_attnweights"]
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_CosMx850_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
         elif model_check=="xenium":
-            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "Xenium_360genes_attentionweights_130epochs.npy"))
+            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "Xenium_360genes_attentionweights_130epochs.npz"))["Xenium_attnweights"]
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_Xenium360_genes.csv"),header=None).iloc[:, 0].astype(str).tolist()
 
         genes = seurat_genes[:]
