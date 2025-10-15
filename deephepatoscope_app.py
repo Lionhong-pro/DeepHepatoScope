@@ -1126,21 +1126,21 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             n_genes = 850
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_CosMx850_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
             model_path = os.path.join(os.path.dirname(__file__), "model_weights", "CosMx_850genes_modelweights_100epochs.pt")
-            scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "CosMx_850genes_standardscaler.pkl"))
+            # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "CosMx_850genes_standardscaler.pkl"))
         elif model_check=="xenium":
             n_genes = 360
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_Xenium360_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
             # seurat_expression_data = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_frfr\FINAL_fr_387661_13158_integrated_nocleanlab_float32_asfloat64_Xenium360.h5ad")
             model_path = os.path.join(os.path.dirname(__file__), "model_weights", "Xenium_360genes_modelweights_100epochs.pt")
-            scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "Xenium_360genes_standardscaler.pkl"))
+            # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "Xenium_360genes_standardscaler.pkl"))
         elif model_check=="custom":
             n_genes = int(custom_input_store["custom_num_genes"])
             print("number of genes:", n_genes)
             #TO FIX:
-            scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "CosMx_850genes_standardscaler.pkl"))
+            # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "CosMx_850genes_standardscaler.pkl"))
             model_path = custom_input_store["custom_model_weights"]
             print("model weights' path:", model_path)
-        from sklearn.preprocessing import StandardScaler
+        # from sklearn.preprocessing import StandardScaler
         print("Running log-normalisation...")
         sc.pp.normalize_total(adata_spatial, target_sum=1e4)
         sc.pp.log1p(adata_spatial)
@@ -1154,12 +1154,12 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         print("Running scaler transformation...")
         import numpy as np
         X_dense = adata_spatial.X.toarray() if hasattr(adata_spatial.X, "toarray") else adata_spatial.X
-        X_scaled = scaler.transform(X_dense) #NOT fit_transform (?)
-        X_scaled = normalize(X_scaled, axis=1, norm='l2')
-        adata_spatial.X = X_scaled
+        # X_scaled = scaler.transform(X_dense)
+        X_dense = normalize(X_dense, axis=1, norm='l2')
+        adata_spatial.X = X_dense
         #print("Running...")
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(device)
+        print("Using device: ", device)
 
         print("Loading model...")
         # Set up model and load weights
@@ -1167,7 +1167,10 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         num_classes = ...  # set this to the number of classes in your training data
         model = TransformerClassifier(64, n_genes, 20, ffn_dim=16).to(device)
         #model.load_state_dict(torch.load(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_fr\final_trained_ssthensl2_CosMx850_100epochs.pt", map_location=torch.device('cpu')))
-        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+        if device == "cuda":
+            model.load_state_dict(torch.load(model_path))
+        elif device == "cpu":
+            model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
         #model.load_state_dict(torch.load(r"C:\Users\gnohi\Downloads\trained_ssthenl2_100epochs.pt", map_location=torch.device('cpu')))
         model.eval()
         #print("Running...")
@@ -1179,7 +1182,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         print("Running model inference...")
         from torch.utils.data import DataLoader, TensorDataset
         from tqdm import tqdm
-        X_spatial = X_spatial.to("cpu")
+        X_spatial = X_spatial.to(device)
         # Create DataLoader for batching
         batch_size = 256  # adjust based on GPU memory
         dataset = TensorDataset(X_spatial)
@@ -1192,7 +1195,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         with torch.no_grad():
             for batch in tqdm(loader):
                 #print("Predicting batch:", i)
-                x_batch = batch[0].to("cpu")
+                x_batch = batch[0].to(device)
                 output = model(x_batch)
                 # If output is a tuple, take the first item (common for logits)
                 if isinstance(output, tuple):
