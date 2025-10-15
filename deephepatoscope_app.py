@@ -585,10 +585,10 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         from scipy.spatial import ConvexHull
         print("model_check:", model_check)
         if model_check=="cosmx":
-            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "CosMx_850genes_attentionweights_100epochs.npy"))
+            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "CosMx_850genes_attentionweights_300epochs.npy"))
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_CosMx850_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
         elif model_check=="xenium":
-            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "Xenium_360genes_attentionweights_100epochs.npy"))
+            attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "Xenium_360genes_attentionweights_130epochs.npy"))
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_Xenium360_genes.csv"),header=None).iloc[:, 0].astype(str).tolist()
 
         genes = seurat_genes[:]
@@ -1125,13 +1125,13 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             #adata_spatial = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_codes\CosMx_demo_2775cells_1000genes.h5ad")
             n_genes = 850
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_CosMx850_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
-            model_path = os.path.join(os.path.dirname(__file__), "model_weights", "CosMx_850genes_modelweights_100epochs.pt")
+            model_path = os.path.join(os.path.dirname(__file__), "model_weights", "CosMx_850genes_modelweights_300epochs.pt")
             # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "CosMx_850genes_standardscaler.pkl"))
         elif model_check=="xenium":
             n_genes = 360
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_Xenium360_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
             # seurat_expression_data = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_frfr\FINAL_fr_387661_13158_integrated_nocleanlab_float32_asfloat64_Xenium360.h5ad")
-            model_path = os.path.join(os.path.dirname(__file__), "model_weights", "Xenium_360genes_modelweights_100epochs.pt")
+            model_path = os.path.join(os.path.dirname(__file__), "model_weights", "Xenium_360genes_modelweights_130epochs.pt")
             # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "Xenium_360genes_standardscaler.pkl"))
         elif model_check=="custom":
             n_genes = int(custom_input_store["custom_num_genes"])
