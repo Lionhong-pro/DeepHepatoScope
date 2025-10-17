@@ -264,7 +264,7 @@ app.layout = dbc.Container([
                 children = html.Div([
                     "Drag and Drop or Click to Upload Target (.h5ad) | Ensure .h5ad file is in the same directory as app.py",
                     html.Br(),
-                    "Place coordinates in the x_slide_mm and y_slide_mm metadata columns of your object"
+                    "Place coordinates in the X_spatial and Y_spatial metadata columns of your object"
                 ]),
                 style={"width": "100%", "height": "80px", "lineHeight": "40px",
                        "borderWidth": "1px", "borderStyle": "dashed", "borderRadius": "5px",
@@ -462,10 +462,10 @@ def upload_target(n_clicks):
 def upload_target(n_clicks):
     print("Loading Xenium example...")
     import os
-    # target_data = sc.read_h5ad("Xenium_demo_16883cells_474genes.h5ad") #spatial_data_2
+    # target_data = sc.read_h5ad("Xenium_demo_16833cells_474genes.h5ad") #spatial_data_2
     # target_data_dict = encode_anndata(target_data)
-    filename = os.path.join(os.path.dirname(__file__), "example_data", "Xenium_demo_16883cells_474genes.h5ad")
-    return f"Uploaded Target File: Xenium_demo_16883cells_474genes.h5ad", "Dataset uploaded successfully!", {
+    filename = os.path.join(os.path.dirname(__file__), "example_data", "Xenium_demo_16833cells_474genes.h5ad")
+    return f"Uploaded Target File: Xenium_demo_16833cells_474genes.h5ad", "Dataset uploaded successfully!", {
         "width": "100%",
         "height": "60px",
         "lineHeight": "60px",
@@ -889,12 +889,29 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         n_colors = 15
         # --- Define fixed colors for clusters ---
         tab20_colors = plt.get_cmap("tab20").colors
+        selected_indices = [0, 2, 4, 6, 8, 10, 12, 14, 16, 17, 18]
+        selected_colors = [tab20_colors[i] for i in selected_indices]
 
         # Pick indices spaced apart for max contrast (darker / vivid ones)
-        selected_indices = [0,2,4,6,8,10,12,14,16,17, 18]  # these are well-separated, not too light
+        # selected_indices = [0,2,4,6,8,10,12,14,16,17, 18]  # these are well-separated, not too light
+
+        extra_palettes = [
+            plt.get_cmap("Set3").colors,
+            plt.get_cmap("Dark2").colors,
+            plt.get_cmap("Paired").colors,
+        ]
+
+        # Combine selected vivid colors + extra palettes
+        all_colors = list(selected_colors)
+        for palette in extra_palettes:
+            all_colors.extend(palette)
 
         # Assign to your clusters
-        cluster_colors = {cl: tab20_colors[i % len(tab20_colors)] for cl, i in zip(cluster_labels, selected_indices)}
+        # cluster_colors = {cl: tab20_colors[i % len(tab20_colors)] for cl, i in zip(cluster_labels, selected_indices)}
+        cluster_colors = {
+            cl: all_colors[i % len(all_colors)]
+            for i, cl in enumerate(cluster_labels)
+        }
 
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(15, 15))
@@ -1050,7 +1067,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         # Step 1: Define module colors
         # ------------------------------
         modules = sorted(set(node_cluster.values()))
-        module_colors = {cl: tab20_colors[i % len(tab20_colors)] for cl, i in zip(cluster_labels, selected_indices)}
+        module_colors = cluster_colors #{cl: tab20_colors[i % len(tab20_colors)] for cl, i in zip(cluster_labels, selected_indices)}
         row_colors = [module_colors[node_cluster[g]] for g in expr.index]
 
         fig3, ax3 = plt.subplots(figsize=(15,6))
@@ -1288,10 +1305,10 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         print(" ")
         print("Plotting spatial plot using coordinates in .h5ad file...")
         target_coordinates = pd.concat(
-            [target_data_sub.obs["x_slide_mm"], target_data_sub.obs["y_slide_mm"]], axis=1
+            [target_data_sub.obs["X_spatial"], target_data_sub.obs["Y_spatial"]], axis=1
         )
-        target_coordinates['scaled_x'] = target_coordinates['x_slide_mm']
-        target_coordinates['scaled_y'] = target_coordinates['y_slide_mm']
+        target_coordinates['scaled_x'] = target_coordinates['X_spatial']
+        target_coordinates['scaled_y'] = target_coordinates['Y_spatial']
         target_coordinates['cell'] = target_data_sub.obs.index
         
         # Map Predicted_Class and class colors
