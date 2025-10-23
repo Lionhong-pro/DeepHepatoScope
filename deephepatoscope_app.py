@@ -71,6 +71,7 @@ import community.community_louvain as community_louvain
 from matplotlib.patches import Polygon, Circle
 from scipy.spatial import ConvexHull
 from scipy import sparse
+import io
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -237,183 +238,373 @@ class TransformerClassifier(nn.Module):
 # App layout
 app.layout = dbc.Container([
     dcc.Store(id="target-data-store", storage_type="memory"),
-    # dcc.Store(id="coordinates-store", storage_type="memory"),
-    # dcc.Store(id="image-store", storage_type="memory"),
     dcc.Store(id="target-data-sub-store", storage_type="memory"),
-    html.H1("DeepHepatoScope", className="text-center mt-4 mb-4"),
-    html.P("Thank you for using DeepHepatoScope! If you used DeepHepatoScope in your work, please cite: [CITATION]", className="text-left mt-4"),
     
-    # Pre-loaded dataset buttons
+    # Header Section
+    html.Div([
+        html.H1(
+            "DeepHepatoScope",
+            className="text-center mb-3",
+            style={
+                #"fontFamily": "'Menlo'", #'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace"
+                "fontWeight": "600",
+                "color": "#1e3a8a",
+                "fontSize": "2.5rem",
+                "letterSpacing": "1px",
+                "textShadow": "0 0 6px rgba(30, 58, 138, 0.25)"
+            }
+        ),
+        dbc.Alert([
+            html.I(className="bi bi-info-circle-fill me-2"),
+            "Thank you for using DeepHepatoScope! If you used DeepHepatoScope in your work, please cite: [CITATION]"
+        ], color="white", className="text-center mb-4", style={"border": "none", "boxShadow": "none"}) #0 2px 4px rgba(0,0,0,0.1)
+    ], className="mt-4 mb-4"),
+    
+    # Pre-loaded dataset buttons storage
     dbc.Row([
-        dcc.Store(id="selected-button", data=None),  # Store for tracking selected button
-        html.Div(id="advanced-section", style={"display": "none", "overflow": "hidden", "height": "0px", "transition": "height 0.5s ease-in-out", "marginTop": "20px"}),
+        dcc.Store(id="selected-button", data=None),
+        html.Div(id="advanced-section", style={
+            "display": "none", 
+            "overflow": "hidden", 
+            "height": "0px", 
+            "transition": "height 0.5s ease-in-out", 
+            "marginTop": "20px"
+        }),
         dbc.Col(html.Div(id="card-error-message", className="text-danger mt-2")),
     ], className="mb-4"),
 
     dcc.Store(id="model-settings-store", storage_type="memory"),
 
-    # dcc.Store(id="lowres-scale-factor-store", storage_type="memory"),
+    # Upload Target Dataset Section
+    dbc.Card([
+        dbc.CardBody([
+            html.H4("1. Upload Target Dataset", className="mb-3", style={
+                "fontWeight": "600",
+                "color": "#1e3a8a"
+            }),
+            
+            dbc.Row([
+                dbc.Col(dcc.Upload(
+                    id="upload-scrna",
+                    children=html.Div([
+                        html.I(className="bi bi-cloud-upload", style={"fontSize": "2rem", "color": "#0d6efd"}),
+                        html.Br(),
+                        html.Span("Drag and Drop or ", style={"fontSize": "0.95rem"}),
+                        html.Strong("Click to Upload", style={"color": "#0d6efd"}),
+                        html.Br(),
+                        html.Span("Target (.h5ad)", style={"fontSize": "0.9rem", "color": "#6c757d"})
+                    ]),
+                    style={
+                        "width": "100%", 
+                        "height": "120px",
+                        "borderWidth": "2px", 
+                        "borderStyle": "dashed", 
+                        "borderRadius": "10px",
+                        "borderColor": "#0d6efd",
+                        "textAlign": "center",
+                        "backgroundColor": "#f8f9fa",
+                        "cursor": "pointer",
+                        "transition": "all 0.3s ease",
+                        "display": "flex",
+                        "alignItems": "center",
+                        "justifyContent": "center"
+                    },
+                    multiple=False
+                ), width=12, lg=8, className="mb-3 mb-lg-0"),
+                dbc.Col([
+                    dbc.Button([
+                        html.I(className="bi bi-file-earmark-text me-2"),
+                        "Load CosMx Example"
+                    ], id="load-example-cosmx", color="primary", className="w-100 mb-2", style={
+                        "borderRadius": "8px",
+                        "fontWeight": "500"
+                    }),
+                    dbc.Button([
+                        html.I(className="bi bi-file-earmark-text me-2"),
+                        "Load Xenium Example"
+                    ], id="load-example-xenium", color="primary", className="w-100", style={
+                        "borderRadius": "8px",
+                        "fontWeight": "500"
+                    })
+                ], width=12, lg=4)
+            ]),
 
-    # Upload target dataset
-    dbc.Row([
-    dbc.Col([
-        html.H4("Upload Target Dataset"),
-        dbc.Row([
-            dbc.Col(dcc.Upload(
-                id="upload-scrna",
-                children = html.Div([
-                    "Drag and Drop or Click to Upload Target (.h5ad) | Ensure .h5ad file is in the same directory as app.py",
-                    html.Br(),
-                    "Place coordinates in the X_spatial and Y_spatial metadata columns of your object"
-                ]),
-                style={"width": "100%", "height": "80px", "lineHeight": "40px",
-                       "borderWidth": "1px", "borderStyle": "dashed", "borderRadius": "5px",
-                       "textAlign": "center", "margin": "10px"},
-                multiple=False
-            ), width=15),
-            dbc.Col(dbc.Button("Load CosMx Example", id="load-example-cosmx", color="primary"), width=5),
-            dbc.Col(dbc.Button("Load Xenium Example", id="load-example-xenium", color="primary"), width=5)
-        ]),
-
-        dbc.Progress(id="target-progress", striped=True, animated=True, style={"margin-top": "10px", "display": "none"}),
-        html.P(id="target-upload-status", className="text-success"),
-    ])
-    ], className="mb-4"),
-    dbc.RadioItems(
-        id="model-check",
-        className="btn-group",
-        inputClassName="btn-check",
-        labelClassName="btn btn-outline-primary",
-        labelCheckedClassName="active",
-        options=[
-            {"label": "CosMx SMI (1000 genes)", "value": "cosmx"},
-            {"label": "Xenium hMulti_v1 (474 genes)", "value": "xenium"},
-            {"label": "Custom dataset", "value": "custom"},
-        ],
-        value="scrna",
-        style={"margin-bottom": "30px"},
-    ),
-
-# First row
-dbc.Row([
-    dbc.Col(
-        html.Div([
-            dbc.Label("Number of overlapping genes:", id="custom-num-genes-label", html_for="num-genes", style={"marginRight": "10px", "display": "none"}),
-            dbc.Input(
-                id="custom-num-genes",
-                type="text",
-                placeholder="Copy training script output",
-                style={"display": "none", "width": "30%"} #enter the number as a percentage and a string
+            dbc.Progress(id="target-progress", striped=True, animated=True, style={
+                "margin-top": "20px", 
+                "display": "none",
+                "height": "20px"
+            }),
+            html.P(id="target-upload-status", className="text-success mt-2", style={"fontWeight": "500"}),
+            # Warning Box
+            dbc.Alert([
+                html.Div([
+                    html.I(className="bi bi-exclamation-triangle-fill me-2"),
+                    html.Strong("Important Requirements:")
+                ], className="mb-2"),
+                html.Ul([
+                    html.Li(["DeepHepatoScope runs on ", html.Strong("single cell level"), " RNA count data."]),
+                    html.Li(["Provide input file in ", html.Strong(".h5ad"), " format and place it in the ", html.Strong("same directory"), " as app.py."]),
+                    html.Li(["For ", html.Strong("spatial transcriptomics"), " datasets, place coordinates in the X_spatial and Y_spatial metadata columns of your .h5ad object"])
+                ], className="mb-0", style={"paddingLeft": "20px"})
+            ], color="danger", className="mb-3", style={
+                "border": "none",
+                "borderRadius": "8px",
+                "boxShadow": "0 2px 8px rgba(220, 53, 69, 0.2)"
+            }),
+        ])
+    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
+    
+    # Model Selection Section
+    dbc.Card([
+        dbc.CardBody([
+            html.H5("2. Select Model Type", className="mb-3", style={"fontWeight": "600", "color": "#1e3a8a"}),
+            dbc.RadioItems(
+                id="model-check",
+                className="btn-group",
+                inputClassName="btn-check",
+                labelClassName="btn btn-outline-primary",
+                labelCheckedClassName="active",
+                options=[
+                    {"label": "CosMx SMI (1000 genes)", "value": "cosmx"},
+                    {"label": "Xenium hMulti_v1 (474 genes)", "value": "xenium"},
+                    {"label": "Custom dataset", "value": "custom"},
+                ],
+                value="scrna",
+                style={"flexWrap": "wrap"}
             ),
-        ], style={"display": "flex", "alignItems": "center", "margin-bottom": "10px"})
-    )
-]),
+        ])
+    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
 
-# Second row
-dbc.Row([
-    dbc.Col(
-        html.Div([
-            dbc.Label("Enter model weights name:", id="custom-model-weights-label", html_for="model-weights", style={"marginRight": "10px", "display": "none"}),
-            dbc.Input(
-                id="custom-model-weights",
-                type="text",
-                placeholder="model_weights.pt | place file in same directory as app.py",
-                style={"display": "none", "width": "60%"}
-            ),
-        ], style={"display": "flex", "alignItems": "center", "margin-bottom": "30px"})
-    )
-]),
-
-dcc.Store(id="custom-input-store", storage_type="memory"),
-
-    dcc.Store(id="target-data-settings-store", storage_type="memory"),
-
-    dbc.Row([
-        dbc.Col([
-            html.Div(
-                dbc.Accordion(
-        [
-            dbc.AccordionItem(
-                [
-         dbc.Row([
-              dbc.Col(html.Label("Number of variable genes to use in PCA:")),
-               dbc.Col(dcc.Input(id="variable_genes-input", value=1000, type="number", min=1, step=1))
+    # Custom Model Configuration
+    dbc.Card([
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col(
+                    html.Div([
+                        dbc.Label("Number of overlapping genes:", id="custom-num-genes-label", 
+                                 html_for="num-genes", className="fw-bold mb-2", 
+                                 style={"display": "none", "color": "#495057"}),
+                        dbc.Input(
+                            id="custom-num-genes",
+                            type="text",
+                            placeholder="Copy training script output",
+                            style={"display": "none", "borderRadius": "8px"}
+                        ),
+                    ], className="mb-3")
+                )
             ]),
             dbc.Row([
-                dbc.Col(html.Label("Number of PCA dimensions to use in Clustering:")),
-                dbc.Col(dcc.Input(id="pca_dims-input", value=50, type="number", min=1, step=1))
+                dbc.Col(
+                    html.Div([
+                        dbc.Label("Enter model weights name:", id="custom-model-weights-label", 
+                                 html_for="model-weights", className="fw-bold mb-2",
+                                 style={"display": "none", "color": "#495057"}),
+                        dbc.Input(
+                            id="custom-model-weights",
+                            type="text",
+                            placeholder="model_weights.pt",
+                            style={"display": "none", "borderRadius": "8px"}
+                        ),
+                        dbc.Alert([
+                            html.I(className="bi bi-exclamation-triangle-fill me-2"),
+                            html.Strong("Note: "),
+                            "Place model weights file in the same directory as app.py"
+                        ], color="danger", id="custom-weights-warning", className="mt-2", style={
+                            "display": "none",
+                            "border": "2px solid #dc3545",
+                            "borderRadius": "8px",
+                            "boxShadow": "0 2px 8px rgba(220, 53, 69, 0.2)",
+                            "fontSize": "0.9rem"
+                        }),
+                    ])
+                )
             ]),
-            # dbc.Row([
-            #     dbc.Col(html.Label("Normalisation method:")),
-            #     dbc.Col(dcc.Dropdown(id="normalisation-dropdown", options=[{"label": "Z-score", "value": "zscore"}, {"label": "LogNormalize", "value": "lognormalize"}], value="lognormalize"))
-            # ]),
-        dbc.Row([
-                dbc.Col(html.Label("What to calculate?")),
-                dbc.Col(dcc.Checklist(id="calculation-checklist", options=[{"label": "UMAP", "value": "umap"}, {"label": "t-SNE", "value": "tsne"}])),
-            ])
-    ],
-                title="Advanced Clustering Settings",
-            ),
-        ],
-    )
-)
         ])
-    ], className="mb-4"),
+    ], id="custom-model-card", className="mb-4", style={
+        "display": "none",
+        "boxShadow": "0 4px 6px rgba(0,0,0,0.1)", 
+        "borderRadius": "10px", 
+        "border": "none"
+    }),
+
+    dcc.Store(id="custom-input-store", storage_type="memory"),
+    dcc.Store(id="target-data-settings-store", storage_type="memory"),
+
+    # Advanced Clustering Settings
+    dbc.Card([
+        dbc.CardBody([
+            dbc.Accordion([
+                dbc.AccordionItem([
+                    dbc.Row([
+                        dbc.Col(html.Label("Number of variable genes to use in PCA:", className="fw-bold"), width=12, md=6),
+                        dbc.Col(dcc.Input(id="variable_genes-input", value=1000, type="number", min=1, step=1, 
+                                         style={"borderRadius": "8px", "width": "100%"}), width=12, md=6)
+                    ], className="mb-3"),
+                    dbc.Row([
+                        dbc.Col(html.Label("Number of PCA dimensions to use in Clustering:", className="fw-bold"), width=12, md=6),
+                        dbc.Col(dcc.Input(id="pca_dims-input", value=50, type="number", min=1, step=1,
+                                         style={"borderRadius": "8px", "width": "100%"}), width=12, md=6)
+                    ], className="mb-3"),
+                    dbc.Row([
+                        dbc.Col(html.Label("What to calculate?", className="fw-bold"), width=12, md=6),
+                        dbc.Col(dcc.Checklist(id="calculation-checklist", 
+                                             options=[
+                                                 {"label": " UMAP", "value": "umap"}, 
+                                                 {"label": " t-SNE", "value": "tsne"}
+                                             ],
+                                             style={"fontSize": "1rem"}), width=12, md=6)
+                    ])
+                ], title="Advanced Clustering Settings", style={"borderRadius": "8px"})
+            ], start_collapsed=False, style={"border": "none"})
+        ])
+    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
     
     # Train and classify button
-    dbc.Row([
-        dbc.Col(html.Button("Analyse and Annotate Target Cell Types", id="train-button", className="btn btn-primary"), width=6),
-        # dbc.Col(dbc.Progress(id="train-progress", striped=True, animated=True, style={"margin-top": "10px", "display": "none"})),
-        dbc.Col(html.P("Once train button is pressed, check your terminal for updates.", id="classification-status", style={"color": "black"})), #className="text-danger" 
-    ], className="mb-4"),
+    dbc.Card([
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Button([
+                        html.I(className="bi bi-play-circle-fill me-2"),
+                        "3. Analyse and Annotate Target Cell Types"
+                    ], id="train-button", color="primary", size="lg", className="w-100", style={
+                        "borderRadius": "8px",
+                        "fontWeight": "600",
+                        "padding": "12px",
+                        "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)"
+                    }),
+                ], width=12, lg=6),
+                html.Div(id="output", className="mt-3"),
+                dcc.Store(id="run-train-trigger", storage_type="memory"),
+                dbc.Col([
+                    dbc.Alert([
+                        html.I(className="bi bi-terminal me-2"),
+                        "Once train button is pressed, check your terminal for updates."
+                    ], color="white", className="mb-0", style={
+                        "border": "0px solid #ffffff", #0dcaf0
+                        "borderRadius": "8px",
+                        "fontSize": "0.9rem"
+                    }),
+                ], width=12, lg=6),
+                html.P(id="classification-status", className="mt-2 mb-0", style={"color": "black", "fontWeight": "500"})
+            ])
+        ])
+    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
     
-    # t-SNE plot
+    # Visualization stores
     dcc.Store(id="umap-plot-store", storage_type="memory"),
     dcc.Store(id="tsne-plot-store", storage_type="memory"),
     dcc.Store(id="marker-gene-store", storage_type="memory"),
     dcc.Store(id="annotations-store", storage_type="memory"),
-
     dcc.Store(id="output-df-store", storage_type="memory"),
 
-    dbc.Row([
-        dbc.Col([
-            # html.H4("Data visualisation"),
-            html.Div(id="spatial-plot-container"),
-            html.Div(id="umap-plot-container"),
-            html.Div(id="tsne-plot-container"),
+    # Visualization Section
+    dbc.Card([
+        dbc.CardBody([
+            html.H4("Tool Output Visualization", className="mb-4", style={"fontWeight": "600", "color": "#1e3a8a"}),
+            html.Div([
+                html.Div(id="spatial-plot-container"),
+                html.Div(id="umap-plot-container"),
+                html.Div(id="tsne-plot-container"),
+            ], style={
+                "width": "60%",
+                "margin": "0 auto",
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "10px",            # 👈 adds 10 px space between each plot
+                "textAlign": "center"
+            }),
             dcc.Graph(
                 id="spatial-plot",
-                style={'display': 'none', 'height': '600px', 'width': '600px'}
+                style={'display': 'none', 'height': '600px', 'width': '100%'}
             ),
             dcc.Graph(
                 id="umap-plot",
-                style={'display': 'none', 'height': '600px', 'width': '600px'}
+                style={'display': 'none', 'height': '600px', 'width': '100%'}
             ),
             dcc.Graph(
                 id="tsne-plot",
-                style={'display': 'none', 'height': '600px', 'width': '600px'}
+                style={'display': 'none', 'height': '600px', 'width': '100%'}
             ),
-            dcc.Input(id="marker_gene-input", placeholder="Enter marker gene name", type="text", style={'display': 'none'}),
-            dbc.Button("Show Canonical Marker Genes", id="marker-button", className="btn btn-secondary mt-2", style={'display': 'none'}),
-            dbc.Button("Return to original plot", id="return-button", className="btn btn-secondary mt-2", style={'display': 'none'}),
+            html.Div([
+                dcc.Input(id="marker_gene-input", placeholder="Enter marker gene name", type="text", 
+                         style={'display': 'none', 'borderRadius': '8px', 'marginRight': '10px', 'padding': '10px'}),
+                dbc.Button([
+                    html.I(className="bi bi-search me-2"),
+                    "Show Canonical Marker Genes"
+                ], id="marker-button", color="secondary", className="mt-2 me-2", 
+                   style={'display': 'none', 'borderRadius': '8px'}),
+                dbc.Button([
+                    html.I(className="bi bi-arrow-counterclockwise me-2"),
+                    "Return to original plot"
+                ], id="return-button", color="secondary", className="mt-2", 
+                   style={'display': 'none', 'borderRadius': '8px'}),
+            ], style={"display": "flex", "alignItems": "center", "flexWrap": "wrap"}),
             html.Div(id="marker-gene-status", className="mt-2")
         ])
-    ]),
+    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
 
-    dbc.Row([
-        dbc.Col(html.Button("Perform Gene Cluster Network (GCN) Analysis", id="network-button", className="btn btn-primary"), width=6),
-        dbc.Col(html.P("Only press once model inference complete. Once pressed, check your terminal for updates.", id="gcn-status", style={"color": "black"})), #className="text-danger" 
-    ], className="mb-4"),
+    # GCN Analysis Section
+    dbc.Card([
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    dbc.Button([
+                        html.I(className="bi bi-play-circle-fill me-2"), #old 4: bi bi-diagram-3-fill me-2
+                        "4. Perform Gene Coexpression Network (GCN) Analysis"
+                    ], id="network-button", color="primary", size="lg", className="w-100", style={
+                        "borderRadius": "8px",
+                        "fontWeight": "600",
+                        "padding": "12px",
+                        "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)" #old 4: 0 4px 8px rgba(13, 110, 253, 0.3)
+                    }),
+                    html.Div(id="output", className="mt-3"),
+                    dcc.Store(id="run-network-trigger", storage_type="memory"),
 
-    dbc.Row([
-        dbc.Col([
-            # html.H4("Data visualisation"),
-            html.Div(id="gcn-plot-container"),
-            html.Div(id="bar-plot-container"),
-            html.Div(id="heatmap-plot-container")
+                    dbc.Alert([
+                        html.I(className="bi bi-info-circle-fill me-2"),
+                        html.Strong("Important: "),
+                        "Only press once model inference is complete."
+                    ], color="warning", className="mb-2 mt-3", style={  # 👈 Added mt-3 for spacing
+                        "border": "2px solid #ffc107",
+                        "borderRadius": "8px",
+                        "fontSize": "0.9rem"
+                    }),
+                ], width=12, lg=6, className="mb-3 mb-lg-0"),
+                dbc.Col([
+                    dbc.Alert([
+                        html.I(className="bi bi-terminal me-2"),
+                        "Once train button is pressed, check your terminal for updates."
+                    ], color="white", className="mb-0", style={
+                        "border": "0px solid #ffffff", #0dcaf0
+                        "borderRadius": "8px",
+                        "fontSize": "0.9rem"
+                    }),
+                    html.P(id="gcn-status", className="mt-2 mb-0", style={"color": "black", "fontWeight": "500"})
+                ], width=12, lg=6)
+            ])
         ])
-    ]),
-])
+    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
+
+    # GCN Results Section
+    dbc.Card([
+        dbc.CardBody([
+            html.H4("GCN Analysis Results", className="mb-4", style={"fontWeight": "600", "color": "#1e3a8a"}),
+            html.Div([
+                html.Div(id="gcn-plot-container"),
+                html.Div(id="bar-plot-container"),
+                html.Div(id="heatmap-plot-container")
+            ], style={
+                "width": "60%",
+                "margin": "0 auto",
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "10px",            # 👈 adds 10 px space between each plot
+                "textAlign": "center"
+            })
+        ])
+    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
+], fluid=True, style={"maxWidth": "14000px", "backgroundColor": "#e0f2f7", "padding": "20px"}) #f8f9fa
     
 
 # Callbacks
@@ -435,6 +626,12 @@ def upload_target(n_clicks):
     # target_data = sc.read_h5ad("CosMx_demo_2775cells_1000genes.h5ad") #spatial_data_2
     # target_data_dict = encode_anndata(target_data)
     filename = os.path.join(os.path.dirname(__file__), "example_data", "CosMx_demo_2775cells_1000genes.h5ad")
+    model_check_disabled_style = {
+        "opacity": "0.6",
+        "pointerEvents": "none",
+        "filter": "grayscale(100%)",
+        "flexWrap": "wrap"
+    }
     return f"Uploaded Target File: CosMx_demo_2775cells_1000genes.h5ad", "Dataset uploaded successfully!", {
         "width": "100%",
         "height": "60px",
@@ -446,7 +643,7 @@ def upload_target(n_clicks):
         "margin": "10px",
         "backgroundColor": "green",  # Change background to green
         "color": "darkgreen"
-    }, True, {"filename": filename}, "cosmx", {"display": "none"} # Disable the upload box"
+    }, True, {"filename": filename}, "cosmx", model_check_disabled_style #{"display": "none"} # Disable the upload box"
 
 @app.callback(
     Output("target-upload-status", "children", allow_duplicate = True),
@@ -465,6 +662,12 @@ def upload_target(n_clicks):
     # target_data = sc.read_h5ad("Xenium_demo_16833cells_474genes.h5ad") #spatial_data_2
     # target_data_dict = encode_anndata(target_data)
     filename = os.path.join(os.path.dirname(__file__), "example_data", "Xenium_demo_16833cells_474genes.h5ad")
+    model_check_disabled_style = {
+        "opacity": "0.6",
+        "pointerEvents": "none",
+        "filter": "grayscale(100%)",
+        "flexWrap": "wrap"
+    }
     return f"Uploaded Target File: Xenium_demo_16833cells_474genes.h5ad", "Dataset uploaded successfully!", {
         "width": "100%",
         "height": "60px",
@@ -476,7 +679,7 @@ def upload_target(n_clicks):
         "margin": "10px",
         "backgroundColor": "green",  # Change background to green
         "color": "darkgreen"
-    }, True, {"filename": filename}, "xenium", {"display": "none"} # Disable the upload box"
+    }, True, {"filename": filename}, "xenium", model_check_disabled_style #{"display": "none"} # Disable the upload box"
 
 
 @app.callback(
@@ -561,9 +764,28 @@ def update_model_settings(marker_gene):
     }
 
 @app.callback(
+    Output("network-button","children", allow_duplicate=True),
+    Output("network-button", "disabled"),
+    Output("run-network-trigger", "data"),
+    Input("network-button", "n_clicks"),
+    prevent_initial_call=True
+)
+def start_analysis_ui(n_clicks):
+    # Immediately change button to spinner state
+    spinner_content = html.Span([
+        dbc.Spinner(size="sm", color="light"), #, className="me-2"
+        "Analysing, refer to terminal..."
+    ])
+    return spinner_content, True, {"start": True}
+
+@app.callback(
     Output("gcn-status", "children"),
     Output("gcn-status", "style"),
-    Input("network-button", "n_clicks"),
+    Output("gcn-plot-container", "children"),
+    Output("bar-plot-container", "children"),
+    Output("heatmap-plot-container", "children"),
+    Output("network-button","children", allow_duplicate=True),
+    Input("run-network-trigger", "data"),
     State("model-check", "value"),
     State("target-data-store", "data"),
     State("target-data-sub-store", "data"),
@@ -583,6 +805,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         import community.community_louvain as community_louvain
         from matplotlib.patches import Polygon, Circle
         from scipy.spatial import ConvexHull
+        import io
         print("model_check:", model_check)
         if model_check=="cosmx":
             attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "CosMx_850genes_attentionweights_300epochs.npz"))["CosMx_attnweights"]
@@ -963,6 +1186,23 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         plt.tight_layout()
         #plt.show()
         plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "gcn_plot.png"), format="png", dpi=300, bbox_inches="tight")
+
+        # Save to in-memory buffer instead of file
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+        buffer.seek(0)
+        plt.close()
+
+        # Encode as base64 for HTML rendering
+        encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+        image_src = f"data:image/png;base64,{encoded_image}"
+        gcn_plot_image = html.Img(src=image_src, style={
+            "maxWidth": "100%",
+            "height": "auto",
+            "borderRadius": "10px",
+            "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+        })
+
         print("--- GCN plot saved to DeepHepatoScope_results/gcn_plot.png ---")
 
         #BAR-PLOT
@@ -1033,6 +1273,23 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         ax2.legend(handles=handles, bbox_to_anchor=(1.05, 1), loc='upper left')
         #plt.show()
         plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "bar_plot.png"), format="png", dpi=300, bbox_inches="tight")
+
+        # Save to in-memory buffer instead of file
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+        buffer.seek(0)
+        plt.close()
+
+        # Encode as base64 for HTML rendering
+        encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+        image_src = f"data:image/png;base64,{encoded_image}"
+        bar_plot_image = html.Img(src=image_src, style={
+            "maxWidth": "100%",
+            "height": "auto",
+            "borderRadius": "10px",
+            "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+        })
+
         print("--- Cluster composition bar plot saved to DeepHepatoScope_results/bar_plot.png ---")
 
         #HEATMAP-PLOT
@@ -1098,16 +1355,54 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         plt.suptitle("Module Eigengene Correlation Heatmap", y=1.02)
         #plt.show()
         plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "correlation_plot.png"), format="png", dpi=300, bbox_inches="tight")
-        print("--- Gene-gene correlation plot saved to DeepHepatoScope_results/correlation_plot.png ---")
-        print(" ")
 
+        # Save to in-memory buffer instead of file
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+        buffer.seek(0)
+        plt.close()
+
+        # Encode as base64 for HTML rendering
+        encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+        image_src = f"data:image/png;base64,{encoded_image}"
+        heatmap_plot_image = html.Img(src=image_src, style={
+            "maxWidth": "100%",
+            "height": "auto",
+            "borderRadius": "10px",
+            "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+        })
+
+        print("--- Gene-gene correlation plot saved to DeepHepatoScope_results/correlation_plot.png ---")
+        
+        normal_button = html.Span([
+            html.I(className="bi bi-play-circle-fill me-2"),
+            "3. Analyse and Annotate Target Cell Types"
+        ])
+        
+        print(" ")
         print("Returning, check terminal for success message...")
-        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to files. Check terminal for Enrichr instructions.", {"color": "darkgreen"}
+        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to files. Check terminal for Enrichr instructions.", {"color": "darkgreen"}, gcn_plot_image, bar_plot_image, heatmap_plot_image, normal_button
     except Exception as e:
         full_traceback = traceback.format_exc()
-        return f"Error: {e}\nDetails:\n{full_traceback}", {"color": "red"}
+        return f"Error: {e}\nDetails:\n{full_traceback}", {"color": "red"}, None, None, None
 
 global target_data_sub
+
+@app.callback(
+    Output("train-button", "children", allow_duplicate=True),
+    Output("train-button", "disabled"),
+    Output("run-train-trigger", "data"),
+    Input("train-button", "n_clicks"),
+    prevent_initial_call=True
+)
+def start_analysis_ui(n_clicks):
+    # Immediately change button to spinner state
+    spinner_content = html.Span([
+        dbc.Spinner(size="sm", color="light"), #, className="me-2"
+        "Analysing, refer to terminal..."
+    ])
+    return spinner_content, True, {"start": True}
+
 @app.callback(
     Output("classification-status", "children"),
     Output("classification-status", "style"),
@@ -1116,7 +1411,8 @@ global target_data_sub
     Output("tsne-plot-container", "children"),
     Output("target-data-sub-store", "data", allow_duplicate=True),
     Output("output-df-store", "data", allow_duplicate=True),
-    Input("train-button", "n_clicks"),
+    Output("train-button", "children", allow_duplicate=True),
+    Input("run-train-trigger", "data"), #"train-button", "n_clicks"
     State("selected-button", "data"),
     State("model-check", "value"),
     State("model-settings-store", "data"),
@@ -1134,6 +1430,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         import pandas as pd
         import matplotlib.pyplot as plt
         import joblib
+        import io
         print("Loading files and model weights...")
         print("model_check:", model_check)
         # adata_spatial = decode_dict(target_data_store["target_data"])
@@ -1303,45 +1600,73 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         import base64
 
         print(" ")
-        print("Plotting spatial plot using coordinates in .h5ad file...")
-        target_coordinates = pd.concat(
-            [target_data_sub.obs["X_spatial"], target_data_sub.obs["Y_spatial"]], axis=1
-        )
-        target_coordinates['scaled_x'] = target_coordinates['X_spatial']
-        target_coordinates['scaled_y'] = target_coordinates['Y_spatial']
-        target_coordinates['cell'] = target_data_sub.obs.index
-        
-        # Map Predicted_Class and class colors
-        mapping_dict = dict(zip(target_data_sub.obs.index, target_data_sub.obs['Predicted_Class']))
-        target_coordinates['class'] = target_coordinates['cell'].map(mapping_dict)
-        target_coordinates['color'] = target_coordinates['class'].map(predefined_colors)
+        print("Attempting to plot spatial plot using coordinates in .h5ad file...")
+        if "X_spatial" in target_data_sub.obs.columns and "Y_spatial" in target_data_sub.obs.columns:
 
-        # Matplotlib scatter plot
-        plt.figure(figsize=(6, 6), dpi=100)
-        for cls, group in target_coordinates.groupby('class'):
-            plt.scatter(
-                group['scaled_x'],
-                group['scaled_y'],
-                s=0.3,  # point size
-                c=group['color'], #class_colors_hex.get(cls, "#000000"),  # fallback black
-                label=cls,
-                alpha=0.8
+            target_coordinates = pd.concat(
+                [target_data_sub.obs["X_spatial"], target_data_sub.obs["Y_spatial"]], axis=1
             )
+            target_coordinates['scaled_x'] = target_coordinates['X_spatial']
+            target_coordinates['scaled_y'] = target_coordinates['Y_spatial']
+            target_coordinates['cell'] = target_data_sub.obs.index
+            
+            # Map Predicted_Class and class colors
+            mapping_dict = dict(zip(target_data_sub.obs.index, target_data_sub.obs['Predicted_Class']))
+            target_coordinates['class'] = target_coordinates['cell'].map(mapping_dict)
+            target_coordinates['color'] = target_coordinates['class'].map(predefined_colors)
 
-        plt.title("Spatial Plot")
-        plt.legend(markerscale=2, fontsize=6, bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.axis("equal")
-        plt.axis("off")
-        plt.tight_layout()
+            # Matplotlib scatter plot
+            plt.figure(figsize=(6, 6), dpi=100)
+            for cls, group in target_coordinates.groupby('class'):
+                plt.scatter(
+                    group['scaled_x'],
+                    group['scaled_y'],
+                    s=0.3,  # point size
+                    c=group['color'], #class_colors_hex.get(cls, "#000000"),  # fallback black
+                    label=cls,
+                    alpha=0.8
+                )
 
-        plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "spatial_plot.png"), format="png", dpi=300, bbox_inches="tight")
-        print("--- Spatial plot saved to DeepHepatoScope_results/spatial_plot.png ---")
+            plt.title("Spatial Plot")
+            plt.legend(markerscale=2, fontsize=6, bbox_to_anchor=(1.05, 1), loc='upper left')
+            plt.axis("equal")
+            plt.axis("off")
+            plt.tight_layout()
+
+            plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "spatial_plot.png"), format="png", dpi=300, bbox_inches="tight")
+
+            
+            # Save to in-memory buffer instead of file
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+            buffer.seek(0)
+            plt.close()
+
+            # Encode as base64 for HTML rendering
+            encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+            image_src = f"data:image/png;base64,{encoded_image}"
+            spatial_image = html.Img(src=image_src, style={
+                "maxWidth": "100%",
+                "height": "auto",
+                "borderRadius": "10px",
+                "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+            })
+
+            print("--- Spatial plot saved to DeepHepatoScope_results/spatial_plot.png ---")
+        
+        else:
+            spatial_image = None
+            print("--- WARNING: No spatial coordinates found! ---")
+            print("--- WARNING: You are either working with scRNA-Seq data (in which case this is intended), our your spatial coordinates columns are not labelled X_spatial and Y_spatial ---")
+            print("--- WARNING: Skipping spatial plot! ---")
 
         sc.set_figure_params(dpi=600)
         sc.set_figure_params(figsize=(10, 8))
 
         if not target_data_settings.get("calculation"):
-            pass
+            umap_image = None
+        elif 'umap' not in target_data_settings["calculation"]:
+            umap_image = None
         elif 'umap' in target_data_settings["calculation"] and "X_UMAP" not in target_data_full.obsm:
             print(" ")
             print("Calculating UMAP...")
@@ -1360,10 +1685,29 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
                 show=False              # <- don't display interactively
             )
             plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "umap_plot.png"), format="png", dpi=300, bbox_inches="tight")
+
+            # Save to in-memory buffer instead of file
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+            buffer.seek(0)
+            plt.close()
+
+            # Encode as base64 for HTML rendering
+            encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+            image_src = f"data:image/png;base64,{encoded_image}"
+            umap_image = html.Img(src=image_src, style={
+                "maxWidth": "100%",
+                "height": "auto",
+                "borderRadius": "10px",
+                "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+            })
+
             print("--- UMAP plot saved to DeepHepatoScope_results/umap_plot.png ---")
 
         if not target_data_settings.get("calculation"):
-            pass
+            tsne_image = None
+        elif 'tsne' not in target_data_settings["calculation"]:
+            tsne_image = None
         elif 'tsne' in target_data_settings["calculation"] and "X_TSNE" not in target_data_full.obsm:
             print(" ")
             print("Calculating TSNE...")
@@ -1382,11 +1726,33 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
                 show=False
             )
             plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "tsne_plot.png"), format="png", dpi=300, bbox_inches="tight")
+
+            # Save to in-memory buffer instead of file
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+            buffer.seek(0)
+            plt.close()
+
+            # Encode as base64 for HTML rendering
+            encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+            image_src = f"data:image/png;base64,{encoded_image}"
+            tsne_image = html.Img(src=image_src, style={
+                "maxWidth": "100%",
+                "height": "auto",
+                "borderRadius": "10px",
+                "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+            })
+
             print("--- TSNE plot saved to DeepHepatoScope_results/tsne_plot.png ---")
         
+        normal_button = html.Span([
+            html.I(className="bi bi-play-circle-fill me-2"),
+            "3. Analyse and Annotate Target Cell Types"
+        ])
+
         print(" ")
         print("Returning, check terminal for success message...")
-        return "Model trained successfully. CSV of annotations and all plots (spatial, UMAP/tSNE) have been saved to files.", {"color": "darkgreen"}, None, None, None, None, {'output_df_str': output_df_str, 'predicted_labels_list': predicted_labels_list} #{'target_data_sub': target_data_sub_dict}, {'output_df_str': output_df_str}
+        return "Model trained successfully. CSV of annotations and all plots (spatial, UMAP/tSNE) have been saved to files.", {"color": "darkgreen"}, spatial_image, umap_image, tsne_image, None, {'output_df_str': output_df_str, 'predicted_labels_list': predicted_labels_list}, normal_button #{'target_data_sub': target_data_sub_dict}, {'output_df_str': output_df_str}
 
     except Exception as e:
         full_traceback = traceback.format_exc()
@@ -1394,4 +1760,4 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
 
 # Run the app
 if __name__ == "__main__":
-    app.run(debug=True) #Replaced run_server
+    app.run(debug=False) #Replaced run_server
