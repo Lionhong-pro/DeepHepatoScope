@@ -1760,4 +1760,4 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
 
 # Run the app
 if __name__ == "__main__":
-    app.run(debug=False) #Replaced run_server
+    app.run(debug=True) #Replaced run_server
