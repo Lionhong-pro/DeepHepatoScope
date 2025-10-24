@@ -15,5 +15,5 @@ networkx==3.5
 community==1.0.0b1
 python-louvain==0.16
 pyyaml==6.0.3
-
+gunicorn
 
