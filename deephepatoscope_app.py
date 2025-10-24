@@ -75,6 +75,9 @@ import io
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+server = app.server
+
 app.title = "DeepHepatoScope"
 
 #Leave the specific order as this works for both scRNA and spatial h5ad files
