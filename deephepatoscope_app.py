@@ -3,10 +3,11 @@
 import os
 import pickle
 import dash
-from dash import dcc, html, Input, Output, State, callback_context
+from dash import dcc, html, Input, Output, State, callback_context, DiskcacheManager, set_props, dash_table
 import dash_bootstrap_components as dbc
-import scanpy as sc
+import diskcache
 
+import scanpy as sc
 import scipy.sparse as sp
 from scipy.sparse import issparse
 from scipy.stats import ttest_ind
@@ -27,6 +28,7 @@ import plotly.graph_objs as go
 import plotly.express as px
 import base64
 from io import BytesIO
+import time
 # import time
 # import os
 # os.environ["OMP_NUM_THREADS"] = "1"  # Limit threads to 1 to reduce noise
@@ -72,12 +74,14 @@ from matplotlib.patches import Polygon, Circle
 from scipy.spatial import ConvexHull
 from scipy import sparse
 import io
+import zipfile
+
+# Create cache
+cache = diskcache.Cache("./cache")
+background_callback_manager = DiskcacheManager(cache)
 
 # Initialize the Dash app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-
-server = app.server
-
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], background_callback_manager=background_callback_manager)
 app.title = "DeepHepatoScope"
 
 #Leave the specific order as this works for both scRNA and spatial h5ad files
@@ -242,6 +246,15 @@ class TransformerClassifier(nn.Module):
 app.layout = dbc.Container([
     dcc.Store(id="target-data-store", storage_type="memory"),
     dcc.Store(id="target-data-sub-store", storage_type="memory"),
+    dcc.Store(id="annotations-store", storage_type="memory"),
+    dcc.Store(id="spatial-plot-store", storage_type="memory"),
+    dcc.Store(id="umap-plot-store", storage_type="memory"),
+    dcc.Store(id="tsne-plot-store", storage_type="memory"),
+    dcc.Store(id="gcn-plot-store", storage_type="memory"),
+    dcc.Store(id="bar-plot-store", storage_type="memory"),
+    dcc.Store(id="heatmap-plot-store", storage_type="memory"),
+    dcc.Store(id="module-genes-store", storage_type="memory"),
+    dcc.Download(id="download-store"),
     
     # Header Section
     html.Div([
@@ -464,130 +477,194 @@ app.layout = dbc.Container([
     
     # Train and classify button
     dbc.Card([
-        dbc.CardBody([
-            dbc.Row([
-                dbc.Col([
-                    dbc.Button([
-                        html.I(className="bi bi-play-circle-fill me-2"),
-                        "3. Analyse and Annotate Target Cell Types"
-                    ], id="train-button", color="primary", size="lg", className="w-100", style={
-                        "borderRadius": "8px",
-                        "fontWeight": "600",
-                        "padding": "12px",
-                        "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)"
-                    }),
-                ], width=12, lg=6),
+    dbc.CardBody([
+        dbc.Row([
+            # Left Column: Train button + progress
+            dbc.Col([
+                dbc.Button([
+                    html.I(className="bi bi-play-circle-fill me-2"),
+                    "3. Analyse and Annotate Target Cell Types"
+                ],
+                id="train-button",
+                color="primary",
+                size="lg",
+                className="w-100",
+                style={
+                    "borderRadius": "8px",
+                    "fontWeight": "600",
+                    "padding": "12px",
+                    "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)"
+                }),
+                html.Progress(id="train-progress-bar", value="0", max="100", style={"width": "100%"}, className="mt-3"),
+                html.Div(id="train-progress-text"),
                 html.Div(id="output", className="mt-3"),
-                dcc.Store(id="run-train-trigger", storage_type="memory"),
+                dcc.Store(id="run-train-trigger", storage_type="memory")
+            ], width=12, lg=6),
+
+
+            dbc.Col([
+                dbc.Row([
                 dbc.Col([
-                    dbc.Alert([
-                        html.I(className="bi bi-terminal me-2"),
-                        "Once train button is pressed, check your terminal for updates."
-                    ], color="white", className="mb-0", style={
-                        "border": "0px solid #ffffff", #0dcaf0
-                        "borderRadius": "8px",
-                        "fontSize": "0.9rem"
-                    }),
-                ], width=12, lg=6),
-                html.P(id="classification-status", className="mt-2 mb-0", style={"color": "black", "fontWeight": "500"})
-            ])
-        ])
-    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
-    
+                dbc.Button([
+                    html.I(className="bi bi-download me-2"),
+                    "Download annotations as .csv"
+                ],
+                id="download-annotations",
+                color="success",
+                size="lg",
+                className="w-100 mb-3",
+                style={
+                    "borderRadius": "8px",
+                    "fontWeight": "600",
+                    "padding": "12px",
+                    "fontSize": "1.2rem",
+                    "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)",
+                    "display": "none"
+                })]),
+
+                dbc.Col([
+                dbc.Button([
+                    html.I(className="bi bi-download me-2"),
+                    "Download plots as .png"
+                ],
+                id="download-analysis-plots",
+                color="success",
+                size="lg",
+                className="w-100 mb-3",
+                style={
+                    "borderRadius": "8px",
+                    "fontWeight": "600",
+                    "padding": "12px",
+                    "fontSize": "1.2rem",
+                    "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)",
+                    "display": "none"
+                })])]),
+
+                html.P(id="gcn-status", className="mt-auto mb-0", style={"color": "black", "fontWeight": "500"})
+            ], width=12, lg=6, style={"display": "flex", "flexDirection": "column"})
+        ]),
+
+        # Optional status below entire row
+        html.P(id="classification-status", className="mt-2 mb-0", style={"color": "black", "fontWeight": "500"})
+    ])
+], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
+
     # Visualization stores
-    dcc.Store(id="umap-plot-store", storage_type="memory"),
-    dcc.Store(id="tsne-plot-store", storage_type="memory"),
     dcc.Store(id="marker-gene-store", storage_type="memory"),
-    dcc.Store(id="annotations-store", storage_type="memory"),
     dcc.Store(id="output-df-store", storage_type="memory"),
 
-    # Visualization Section
-    dbc.Card([
-        dbc.CardBody([
-            html.H4("Tool Output Visualization", className="mb-4", style={"fontWeight": "600", "color": "#1e3a8a"}),
-            html.Div([
+dbc.Card([
+    dbc.CardBody([
+        dbc.Row([
+            dbc.Col([
                 html.Div(id="spatial-plot-container"),
                 html.Div(id="umap-plot-container"),
                 html.Div(id="tsne-plot-container"),
-            ], style={
-                "width": "60%",
-                "margin": "0 auto",
-                "display": "flex",
-                "flexDirection": "column",
-                "gap": "10px",            # 👈 adds 10 px space between each plot
-                "textAlign": "center"
-            }),
-            dcc.Graph(
-                id="spatial-plot",
-                style={'display': 'none', 'height': '600px', 'width': '100%'}
-            ),
-            dcc.Graph(
-                id="umap-plot",
-                style={'display': 'none', 'height': '600px', 'width': '100%'}
-            ),
-            dcc.Graph(
-                id="tsne-plot",
-                style={'display': 'none', 'height': '600px', 'width': '100%'}
-            ),
-            html.Div([
-                dcc.Input(id="marker_gene-input", placeholder="Enter marker gene name", type="text", 
-                         style={'display': 'none', 'borderRadius': '8px', 'marginRight': '10px', 'padding': '10px'}),
-                dbc.Button([
-                    html.I(className="bi bi-search me-2"),
-                    "Show Canonical Marker Genes"
-                ], id="marker-button", color="secondary", className="mt-2 me-2", 
-                   style={'display': 'none', 'borderRadius': '8px'}),
-                dbc.Button([
-                    html.I(className="bi bi-arrow-counterclockwise me-2"),
-                    "Return to original plot"
-                ], id="return-button", color="secondary", className="mt-2", 
-                   style={'display': 'none', 'borderRadius': '8px'}),
-            ], style={"display": "flex", "alignItems": "center", "flexWrap": "wrap"}),
-            html.Div(id="marker-gene-status", className="mt-2")
-        ])
-    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
 
-    # GCN Analysis Section
+                dcc.Graph(id="spatial-plot", style={'display': 'none','height':'600px','width':'600px'}),
+                dcc.Graph(id="umap-plot", style={'display': 'none','height':'600px','width':'600px'}),
+                dcc.Graph(id="tsne-plot", style={'display': 'none','height':'600px','width':'600px'}),
+
+                dcc.Input(id="marker_gene-input", placeholder="Enter marker gene name", type="text",
+                          style={'display':'none','borderRadius':'8px','marginRight':'10px','padding':'10px'}),
+                dbc.Button("Show Canonical Marker Genes", id="marker-button", color="secondary",
+                           className="mt-2 me-2", style={'display':'none','borderRadius':'8px'}),
+                dbc.Button("Return to original plot", id="return-button", color="secondary",
+                           className="mt-2", style={'display':'none','borderRadius':'8px'}),
+                html.Div(id="marker-gene-status", className="mt-2")
+            ], width=12)
+        ])
+    ])
+], className="mb-4", style={"boxShadow":"0 4px 6px rgba(0,0,0,0.1)","borderRadius":"10px","border":"none"}),
+
+    # Visualizdbc.Card([
     dbc.Card([
         dbc.CardBody([
+            html.H4("Gene Coexpression Network (GCN) Analysis", className="mb-4", style={
+                "fontWeight": "600", "color": "#1e3a8a"
+            }),
             dbc.Row([
+                # Left Column: GCN Analysis button, progress, outputs, alert
                 dbc.Col([
                     dbc.Button([
-                        html.I(className="bi bi-play-circle-fill me-2"), #old 4: bi bi-diagram-3-fill me-2
+                        html.I(className="bi bi-play-circle-fill me-2"),
                         "4. Perform Gene Coexpression Network (GCN) Analysis"
-                    ], id="network-button", color="primary", size="lg", className="w-100", style={
+                    ],
+                    id="network-button",
+                    color="primary",
+                    size="lg",
+                    className="w-100",
+                    style={
                         "borderRadius": "8px",
                         "fontWeight": "600",
                         "padding": "12px",
-                        "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)" #old 4: 0 4px 8px rgba(13, 110, 253, 0.3)
+                        "boxShadow": "0 4px 8px rgba(13, 110, 253, 0.3)",
                     }),
+                    html.Progress(id="gcn-progress-bar", value="0", max="100",
+                                style={"width": "100%"}, className="mt-3"),
+                    html.Div(id="gcn-progress-text"),
                     html.Div(id="output", className="mt-3"),
                     dcc.Store(id="run-network-trigger", storage_type="memory"),
-
                     dbc.Alert([
                         html.I(className="bi bi-info-circle-fill me-2"),
                         html.Strong("Important: "),
                         "Only press once model inference is complete."
-                    ], color="warning", className="mb-2 mt-3", style={  # 👈 Added mt-3 for spacing
+                    ], color="warning", className="mb-2 mt-3", style={
                         "border": "2px solid #ffc107",
                         "borderRadius": "8px",
                         "fontSize": "0.9rem"
-                    }),
-                ], width=12, lg=6, className="mb-3 mb-lg-0"),
+                    })
+                ], width=12, lg=6),
+
+                # Right Column: Download button (top) + gcn-status (bottom)
                 dbc.Col([
-                    dbc.Alert([
-                        html.I(className="bi bi-terminal me-2"),
-                        "Once train button is pressed, check your terminal for updates."
-                    ], color="white", className="mb-0", style={
-                        "border": "0px solid #ffffff", #0dcaf0
+                dbc.Row([
+                    dbc.Col([
+                    dbc.Button([
+                        html.I(className="bi bi-download me-2"),
+                        "Download module genes as .csv"
+                    ],
+                    id="download-module-genes",
+                    color="success",
+                    size="lg",
+                    className="w-100 mb-3",
+                    style={
                         "borderRadius": "8px",
-                        "fontSize": "0.9rem"
-                    }),
-                    html.P(id="gcn-status", className="mt-2 mb-0", style={"color": "black", "fontWeight": "500"})
-                ], width=12, lg=6)
+                        "fontWeight": "600",
+                        "padding": "12px",
+                        "fontSize": "1.2rem",
+                        "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)",
+                        "display": "none"
+                    })
+                    ]),
+                    dbc.Col([
+                    dbc.Button([
+                        html.I(className="bi bi-download me-2"),
+                        "Download plots as .png"
+                    ],
+                    id="download-gcn-plots",
+                    color="success",
+                    size="lg",
+                    className="w-100 mb-3",
+                    style={
+                        "borderRadius": "8px",
+                        "fontWeight": "600",
+                        "padding": "12px",
+                        "fontSize": "1.2rem",
+                        "boxShadow": "0 4px 8px rgba(25, 135, 84, 0.3)",
+                        "display": "none"
+                    })
+                    ]),
+                    html.P(id="gcn-status", className="mt-auto mb-0",
+                        style={"color": "black", "fontWeight": "500"})])
+                ], width=12, lg=6, style={"display": "flex", "flexDirection": "column"})
             ])
         ])
-    ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
+    ], className="mb-4", style={
+        "boxShadow": "0 4px 6px rgba(0,0,0,0.1)",
+        "borderRadius": "10px",
+        "border": "none"
+    }),
 
     # GCN Results Section
     dbc.Card([
@@ -604,11 +681,149 @@ app.layout = dbc.Container([
                 "flexDirection": "column",
                 "gap": "10px",            # 👈 adds 10 px space between each plot
                 "textAlign": "center"
-            })
+            }),
+            html.Div(id="cluster-table-container", children=[
+                html.H4("Module Genes"),
+                # html.Button("Download CSV", id="download-clusters-btn", style={"display": "none"}),
+                # dcc.Download(id="download-clusters-csv"),
+                # html.Div("Run analysis to see results...", id="cluster-placeholder")
+            ]),
         ])
     ], className="mb-4", style={"boxShadow": "0 4px 6px rgba(0,0,0,0.1)", "borderRadius": "10px", "border": "none"}),
 ], fluid=True, style={"maxWidth": "14000px", "backgroundColor": "#e0f2f7", "padding": "20px"}) #f8f9fa
-    
+
+def update_progress(value, text):
+    set_props("train-progress-bar", {"value": value})
+    time.sleep(0.5)  # Ensure update is processed
+    set_props("train-progress-text", {"children": text})
+    time.sleep(0.5)
+
+def update_progress_gcn(value, text):
+    set_props("gcn-progress-bar", {"value": value})
+    time.sleep(0.5)  # Ensure update is processed
+    set_props("gcn-progress-text", {"children": text})
+    time.sleep(0.5)
+
+def update_spatial_plot(plot):
+    set_props("spatial-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
+def update_umap_plot(plot):
+    set_props("umap-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
+def update_tsne_plot(plot):
+    set_props("tsne-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
+def update_gcn_plot(plot):
+    set_props("gcn-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
+def update_bar_plot(plot):
+    set_props("bar-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
+def update_heatmap_plot(plot):
+    set_props("heatmap-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
+    #     dcc.Store(id="annotations-store", storage_type="memory"),
+    # dcc.Store(id="spatial-plot-store", storage_type="memory"),
+    # dcc.Store(id="umap-plot-store", storage_type="memory"),
+    # dcc.Store(id="tsne-plot-store", storage_type="memory"),
+    # dcc.Store(id="gcn-plot-store", storage_type="memory"),
+    # dcc.Store(id="bar-plot-store", storage_type="memory"),
+    # dcc.Store(id="heatmap-plot-store", storage_type="memory"),
+    # dcc.Store(id="module-genes-store", storage_type="memory"),
+
+@app.callback(
+    Output("download-store", "data", allow_duplicate=True),
+    Input("download-annotations", "n_clicks"),
+    State("annotations-store", "data"),
+    prevent_initial_call=True
+)
+def download_csv(n_clicks, data):
+    if not data:
+        return dash.no_update
+    df = pd.DataFrame(data)
+    return dcc.send_data_frame(df.to_csv, "annotations.csv", index=False)
+
+@app.callback(
+    Output("download-store", "data", allow_duplicate=True),
+    Input("download-analysis-plots", "n_clicks"),
+    State("spatial-plot-store", "data"),
+    State("umap-plot-store", "data"),
+    State("tsne-plot-store", "data"),
+    prevent_initial_call=True
+)
+def download_plots(n_clicks, spatial_data, umap_data, tsne_data):
+    if not any([spatial_data, umap_data, tsne_data]):
+        return dash.no_update
+
+    # Helper: Decode base64 image
+    def decode_image(data_url):
+        if not data_url:
+            return None
+        header, encoded = data_url.split(",", 1)
+        return base64.b64decode(encoded)
+
+    # Create in-memory ZIP file
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        if spatial_data:
+            zf.writestr("spatial_plot.png", decode_image(spatial_data))
+        if umap_data:
+            zf.writestr("umap_plot.png", decode_image(umap_data))
+        if tsne_data:
+            zf.writestr("tsne_plot.png", decode_image(tsne_data))
+
+    zip_buffer.seek(0)
+    return dcc.send_bytes(zip_buffer.getvalue(), "analysis_plots.zip")
+
+@app.callback(
+    Output("download-store", "data", allow_duplicate=True),
+    Input("download-gcn-plots", "n_clicks"),
+    State("gcn-plot-store", "data"),
+    State("bar-plot-store", "data"),
+    State("heatmap-plot-store", "data"),
+    prevent_initial_call=True
+)
+def download_plots(n_clicks, gcn_data, bar_data, heatmap_data):
+    if not any([gcn_data, bar_data, heatmap_data]):
+        return dash.no_update
+
+    # Helper: Decode base64 image
+    def decode_image(data_url):
+        if not data_url:
+            return None
+        header, encoded = data_url.split(",", 1)
+        return base64.b64decode(encoded)
+
+    # Create in-memory ZIP file
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        if gcn_data:
+            zf.writestr("gcn_plot.png", decode_image(gcn_data))
+        if bar_data:
+            zf.writestr("bar_plot.png", decode_image(bar_data))
+        if heatmap_data:
+            zf.writestr("heatmap_plot.png", decode_image(heatmap_data))
+
+    zip_buffer.seek(0)
+    return dcc.send_bytes(zip_buffer.getvalue(), "gcn_plots.zip")
+
+@app.callback(
+    Output("download-store", "data", allow_duplicate=True),
+    Input("download-module-genes", "n_clicks"),
+    State("module-genes-store", "data"),
+    prevent_initial_call=True
+)
+def download_csv(n_clicks, data):
+    if not data:
+        return dash.no_update
+    df = pd.DataFrame(data)
+    return dcc.send_data_frame(df.to_csv, "module_genes.csv", index=False)
 
 # Callbacks
 #upload scrna data
@@ -756,15 +971,15 @@ def update_model_settings(variable_genes, pca_dims, calculation):
         "calculation": calculation
     }
 
-@app.callback(
-    Output("marker-gene-store", "data"),
-    Input("marker_gene-input", "value")
-)
-def update_model_settings(marker_gene):
-    # Create dictionary to store the settings
-    return {
-        "marker_gene": marker_gene,
-    }
+# @app.callback(
+#     Output("marker-gene-store", "data"),
+#     Input("marker_gene-input", "value")
+# )
+# def update_model_settings(marker_gene):
+#     # Create dictionary to store the settings
+#     return {
+#         "marker_gene": marker_gene,
+#     }
 
 @app.callback(
     Output("network-button","children", allow_duplicate=True),
@@ -777,7 +992,7 @@ def start_analysis_ui(n_clicks):
     # Immediately change button to spinner state
     spinner_content = html.Span([
         dbc.Spinner(size="sm", color="light"), #, className="me-2"
-        "Analysing, refer to terminal..."
+        "Analysing..."
     ])
     return spinner_content, True, {"start": True}
 
@@ -787,12 +1002,30 @@ def start_analysis_ui(n_clicks):
     Output("gcn-plot-container", "children"),
     Output("bar-plot-container", "children"),
     Output("heatmap-plot-container", "children"),
+    Output("cluster-table-container", "children"),
+
+    Output("gcn-plot-store", "data", allow_duplicate=True),
+    Output("bar-plot-store", "data", allow_duplicate=True),
+    Output("heatmap-plot-store", "data", allow_duplicate=True),
+    Output("module-genes-store", "data", allow_duplicate=True),
+
+    Output("download-module-genes", "style"),
+    Output("download-gcn-plots", "style"),
+
     Output("network-button","children", allow_duplicate=True),
     Input("run-network-trigger", "data"),
     State("model-check", "value"),
     State("target-data-store", "data"),
     State("target-data-sub-store", "data"),
     State("output-df-store", "data"),
+    background=True,
+    running=[
+        (Output("gcn-progress-bar", "value"), "0", "100"),
+        (Output("gcn-progress-text", "children"), "Starting analysis...", ""),
+        (Output("gcn-plot-container", "children"), None, None),
+        (Output("bar-plot-container", "children"), None, None),
+        (Output("heatmap-plot-container", "children"), None, None)
+    ],
     prevent_initial_call=True
 )
 def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store, output_df_store):
@@ -809,7 +1042,8 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         from matplotlib.patches import Polygon, Circle
         from scipy.spatial import ConvexHull
         import io
-        print("model_check:", model_check)
+        update_progress_gcn("0", "Loading trained model attention weights...")
+        print("Model selected:", model_check)
         if model_check=="cosmx":
             attn_matrix = np.load(os.path.join(os.path.dirname(__file__), "attention_weights", "CosMx_850genes_attentionweights_300epochs.npz"))["CosMx_attnweights"]
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_CosMx850_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
@@ -818,12 +1052,13 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_Xenium360_genes.csv"),header=None).iloc[:, 0].astype(str).tolist()
 
         genes = seurat_genes[:]
+        update_progress_gcn("10", "Loading data files...")
 
         adata = sc.read_h5ad(target_data_store["filename"])
         sc.pp.normalize_total(adata, target_sum=1e4)
         sc.pp.log1p(adata)
         target_data_full = adata
-        print("Running scaler fitting...")
+        # print("Running scaler fitting...")
 
         seurat_genes_idx = pd.Index(seurat_genes)
         shared_genes = seurat_genes_idx.intersection(adata.var_names)
@@ -832,6 +1067,8 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         predicted_labels_list = output_df_store["predicted_labels_list"]
         predicted_labels = np.array(predicted_labels_list)
         adata.obs["Predicted_Class"] = predicted_labels
+
+        update_progress_gcn("20", "Calculating DEGs...")
 
         temp_DEGs = calculate_DEGs(adata)
         DEGs = {
@@ -862,6 +1099,9 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
             "TAMs",
             "TECs"
         ]
+
+        update_progress_gcn("30", "Processing attention matrix...")
+
         # Create a dict of DataFrames for easy labeling
         attn_matrix_labeled = {
             cell_types[i]: pd.DataFrame(attn_matrix[i], index=genes, columns=genes)
@@ -925,6 +1165,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
 
         # -------- Build graph & per-edge contributions ----------
         print("Commencing graph generation...")
+        update_progress_gcn("40", "Commencing graph generation...")
         G = nx.Graph()
         for celltype, df in top20_values_per_celltype.items():
             if df is None or df.empty:
@@ -1110,6 +1351,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
 
         print(" ")
         print("Calculating GCN...")
+        update_progress_gcn("40", "Calculating GCN...")
 
         # --- Cluster colors (15 visually distinct) ---
         n_colors = 15
@@ -1199,6 +1441,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         # Encode as base64 for HTML rendering
         encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
         image_src = f"data:image/png;base64,{encoded_image}"
+        store_gcn_image = image_src
         gcn_plot_image = html.Img(src=image_src, style={
             "maxWidth": "100%",
             "height": "auto",
@@ -1206,12 +1449,14 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
             "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
         })
 
+        update_gcn_plot(gcn_plot_image)
         print("--- GCN plot saved to DeepHepatoScope_results/gcn_plot.png ---")
 
         #BAR-PLOT
 
         print(" ")
         print("Calculating cluster compositions...")
+        update_progress_gcn("60", "Calculating cluster compositions...")
 
         # Convert node_edge_ct_counts to DataFrame
         df_counts = pd.DataFrame.from_dict(node_edge_ct_counts, orient='index').fillna(0)
@@ -1286,6 +1531,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         # Encode as base64 for HTML rendering
         encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
         image_src = f"data:image/png;base64,{encoded_image}"
+        store_bar_image = image_src
         bar_plot_image = html.Img(src=image_src, style={
             "maxWidth": "100%",
             "height": "auto",
@@ -1293,12 +1539,14 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
             "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
         })
 
+        update_bar_plot(bar_plot_image)
         print("--- Cluster composition bar plot saved to DeepHepatoScope_results/bar_plot.png ---")
 
         #HEATMAP-PLOT
 
         print(" ")
         print("Calculating gene-gene correlations...")
+        update_progress_gcn("80", "Calculating gene-gene correlations...")
 
         import pandas as pd
         import numpy as np
@@ -1368,6 +1616,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         # Encode as base64 for HTML rendering
         encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
         image_src = f"data:image/png;base64,{encoded_image}"
+        store_heatmap_image = image_src
         heatmap_plot_image = html.Img(src=image_src, style={
             "maxWidth": "100%",
             "height": "auto",
@@ -1375,16 +1624,123 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
             "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
         })
 
+        update_heatmap_plot(heatmap_plot_image)
         print("--- Gene-gene correlation plot saved to DeepHepatoScope_results/correlation_plot.png ---")
         
+        # node_cluster = {gene: cluster_id, ...}
+        cluster_labels = sorted(set(node_cluster.values()))
+
+        # Build and print gene list for each cluster
+        # cluster_genes = {}
+        # for cl in cluster_labels:
+        #     genes_in_cl = [gene for gene, cl_id in node_cluster.items() if cl_id == cl]
+        #     cluster_genes[cl] = genes_in_cl
+        #     print(f"\nCluster {cl} ({len(genes_in_cl)} genes):")
+        #     print("\n".join(genes_in_cl))
+    
+        # Build gene list for each cluster
+        cluster_genes = {}
+        data_rows = []
+        
+        for cl in cluster_labels:
+            genes_in_cl = [gene for gene, cl_id in node_cluster.items() if cl_id == cl]
+            cluster_genes[cl] = genes_in_cl
+            
+            # Create rows for table
+            for gene in genes_in_cl:
+                data_rows.append({
+                    'Cluster': cl,
+                    'Gene': gene
+                })
+        
+        # Create DataFrame
+        df_clusters = pd.DataFrame(data_rows)
+        store_module_genes = df_clusters.to_dict('records')
+        
+        # Create summary for display
+        summary_rows = []
+        for cl in cluster_labels:
+            genes_in_cl = cluster_genes[cl]
+            summary_rows.append({
+                'Cluster': cl,
+                'Gene Count': len(genes_in_cl),
+                'Genes': ', '.join(genes_in_cl[:5]) + ('...' if len(genes_in_cl) > 5 else '')
+            })
+        
+        df_summary = pd.DataFrame(summary_rows)
+        
+        # Build table component
+        table_component = html.Div([
+            html.H4("Module Genes"),
+            html.H4(f"Gene Clusters ({len(cluster_labels)} clusters, {len(data_rows)} genes)"),
+            
+            # html.Button("Download CSV", id="download-clusters-btn", n_clicks=0),
+            # dcc.Download(id="download-clusters-csv"),
+            
+            html.Br(), html.Br(),
+            
+            html.H5("Summary View"),
+            dash_table.DataTable(
+                id='cluster-summary-table',
+                columns=[{'name': i, 'id': i} for i in df_summary.columns],
+                data=df_summary.to_dict('records'),
+                style_table={'overflowX': 'auto'},
+                style_cell={
+                    'textAlign': 'left',
+                    'padding': '10px',
+                    'whiteSpace': 'normal',
+                    'height': 'auto',
+                },
+                style_header={
+                    'backgroundColor': 'rgb(230, 230, 230)',
+                    'fontWeight': 'bold'
+                },
+                style_data_conditional=[
+                    {
+                        'if': {'row_index': 'odd'},
+                        'backgroundColor': 'rgb(248, 248, 248)'
+                    }
+                ],
+                page_size=10,
+                sort_action='native',
+            ),
+            
+            # html.Br(),
+            # html.H5("Detailed Gene List"),
+            # dash_table.DataTable(
+            #     id='cluster-detail-table',
+            #     columns=[{'name': i, 'id': i} for i in df_clusters.columns],
+            #     data=df_clusters.to_dict('records'),
+            #     style_table={'overflowX': 'auto'},
+            #     style_cell={
+            #         'textAlign': 'left',
+            #         'padding': '10px'
+            #     },
+            #     style_header={
+            #         'backgroundColor': 'rgb(230, 230, 230)',
+            #         'fontWeight': 'bold'
+            #     },
+            #     style_data_conditional=[
+            #         {
+            #             'if': {'row_index': 'odd'},
+            #             'backgroundColor': 'rgb(248, 248, 248)'
+            #         }
+            #     ],
+            #     page_size=20,
+            #     sort_action='native',
+            #     filter_action='native'
+            # )
+        ])
+
         normal_button = html.Span([
             html.I(className="bi bi-play-circle-fill me-2"),
-            "3. Analyse and Annotate Target Cell Types"
+            "4. Perform Gene Coexpression Network (GCN) Analysis"
         ])
         
         print(" ")
         print("Returning, check terminal for success message...")
-        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to files. Check terminal for Enrichr instructions.", {"color": "darkgreen"}, gcn_plot_image, bar_plot_image, heatmap_plot_image, normal_button
+        update_progress_gcn("100", " ")
+        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to the DeepHepatoScope_results folder. Check terminal for Enrichr instructions.", {"color": "darkgreen"}, gcn_plot_image, bar_plot_image, heatmap_plot_image, table_component, store_gcn_image, store_bar_image, store_heatmap_image, store_module_genes, {"display": "block"}, {"display": "block"}, normal_button
     except Exception as e:
         full_traceback = traceback.format_exc()
         return f"Error: {e}\nDetails:\n{full_traceback}", {"color": "red"}, None, None, None
@@ -1402,7 +1758,7 @@ def start_analysis_ui(n_clicks):
     # Immediately change button to spinner state
     spinner_content = html.Span([
         dbc.Spinner(size="sm", color="light"), #, className="me-2"
-        "Analysing, refer to terminal..."
+        "Analysing..."
     ])
     return spinner_content, True, {"start": True}
 
@@ -1414,6 +1770,15 @@ def start_analysis_ui(n_clicks):
     Output("tsne-plot-container", "children"),
     Output("target-data-sub-store", "data", allow_duplicate=True),
     Output("output-df-store", "data", allow_duplicate=True),
+
+    Output("annotations-store", "data", allow_duplicate=True),
+    Output("spatial-plot-store", "data", allow_duplicate=True),
+    Output("umap-plot-store", "data", allow_duplicate=True),
+    Output("tsne-plot-store", "data", allow_duplicate=True),
+
+    Output("download-annotations", "style"),
+    Output("download-analysis-plots", "style"),
+
     Output("train-button", "children", allow_duplicate=True),
     Input("run-train-trigger", "data"), #"train-button", "n_clicks"
     State("selected-button", "data"),
@@ -1422,11 +1787,20 @@ def start_analysis_ui(n_clicks):
     State("target-data-settings-store", "data"),
     State("target-data-store", "data"),
     State("custom-input-store", "data"),
+    background=True,
+    running=[
+        (Output("train-progress-bar", "value"), "0", "100"),
+        (Output("train-progress-text", "children"), "Starting analysis...", ""),
+        (Output("spatial-plot-container", "children"), None, None),
+        (Output("umap-plot-container", "children"), None, None),
+        (Output("tsne-plot-container", "children"), None, None)
+    ],
     prevent_initial_call=True
 )
 def train_model(n_clicks, selected_button, model_check, model_settings, target_data_settings, target_data_store, custom_input_store):
     try:
         print("Inference pipeline started. Importing modules...")
+        from dash import ctx, set_props
         import os
         import scanpy as sc
         import numpy as np
@@ -1434,44 +1808,45 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         import matplotlib.pyplot as plt
         import joblib
         import io
+        import time
         print("Loading files and model weights...")
-        print("model_check:", model_check)
+        update_progress("0", "Loading data files...")
+
+        print("Model selected:", model_check)
         # adata_spatial = decode_dict(target_data_store["target_data"])
         adata_spatial = sc.read_h5ad(target_data_store["filename"])
+        update_progress("10", "Loading model weights...")
         if model_check=="cosmx":
             #adata_spatial = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_codes\CosMx_demo_2775cells_1000genes.h5ad")
             n_genes = 850
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_CosMx850_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
             model_path = os.path.join(os.path.dirname(__file__), "model_weights", "CosMx_850genes_modelweights_300epochs.pt")
-            # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "CosMx_850genes_standardscaler.pkl"))
         elif model_check=="xenium":
             n_genes = 360
             seurat_genes = pd.read_csv(os.path.join(os.path.dirname(__file__), "gene_lists", "final_Xenium360_genes.csv"), header=None).iloc[:, 0].astype(str).tolist()
             # seurat_expression_data = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_frfr\FINAL_fr_387661_13158_integrated_nocleanlab_float32_asfloat64_Xenium360.h5ad")
             model_path = os.path.join(os.path.dirname(__file__), "model_weights", "Xenium_360genes_modelweights_130epochs.pt")
-            # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "Xenium_360genes_standardscaler.pkl"))
         elif model_check=="custom":
             n_genes = int(custom_input_store["custom_num_genes"])
             print("number of genes:", n_genes)
-            #TO FIX:
-            # scaler = joblib.load(os.path.join(os.path.dirname(__file__), "standard_scalers", "CosMx_850genes_standardscaler.pkl"))
             model_path = custom_input_store["custom_model_weights"]
             print("model weights' path:", model_path)
-        # from sklearn.preprocessing import StandardScaler
         print("Running log-normalisation...")
+        update_progress("20", "Running log-normalisation...")
+        set_props("train-progress-bar", {"value": "20"})
+        time.sleep(0.5)
+        set_props("train-progress-text", {"children": "Running log-normalisation..."})
+        time.sleep(0.5)
         sc.pp.normalize_total(adata_spatial, target_sum=1e4)
         sc.pp.log1p(adata_spatial)
         target_data_full = adata_spatial
 
-        print("Running scaler fitting...")
         seurat_genes_idx = pd.Index(seurat_genes)
         shared_genes = seurat_genes_idx.intersection(adata_spatial.var_names)
         adata_spatial = adata_spatial[:, shared_genes].copy()
 
-        print("Running scaler transformation...")
         import numpy as np
         X_dense = adata_spatial.X.toarray() if hasattr(adata_spatial.X, "toarray") else adata_spatial.X
-        # X_scaled = scaler.transform(X_dense)
         X_dense = normalize(X_dense, axis=1, norm='l2')
         adata_spatial.X = X_dense
         #print("Running...")
@@ -1479,6 +1854,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         print("Using device: ", device)
 
         print("Loading model...")
+        update_progress("30", "Loading model...")
         # Set up model and load weights
         input_dim = adata_spatial.shape[1]  # number of genes
         num_classes = ...  # set this to the number of classes in your training data
@@ -1497,6 +1873,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         X_spatial = torch.tensor(X_dense, dtype=torch.float32)
 
         print("Running model inference...")
+        update_progress("40", "Running log-normalisation...")
         from torch.utils.data import DataLoader, TensorDataset
         from tqdm import tqdm
         X_spatial = X_spatial.to(device)
@@ -1524,6 +1901,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
 
         # Combine predictions
         print("Aggregating predictions...")
+        update_progress("50", "Aggregating predictions...")
         final_predictions = torch.cat(all_preds, dim=0)
         label_encoder = joblib.load(os.path.join(os.path.dirname(__file__), "label_encoder", "label_encoder_20classes.pkl"))
         predicted_indices = final_predictions.argmax(dim=1).numpy()
@@ -1548,10 +1926,14 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         os.makedirs(new_folder, exist_ok=True)
 
         output_df.to_csv(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "DeepHepatoScope_annotations.csv"))
+        store_annotations = output_df.to_dict("records")
+
         print(" ")
         print("--- INFERENCE COMPLETE! DEEPHEPATOSCOPE ANNOTATIONS SAVED SUCCESSFULLY TO: ---")
         print("DeepHepatoScope_results/DeepHepatoScope_annotations.csv")
         print(" ")
+        
+        update_progress("60", "Inference complete. Moving onto spatial plotting...")
 
         output_df_str = output_df.to_json(orient="records")
 
@@ -1648,6 +2030,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             # Encode as base64 for HTML rendering
             encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
             image_src = f"data:image/png;base64,{encoded_image}"
+            store_spatial_image = image_src
             spatial_image = html.Img(src=image_src, style={
                 "maxWidth": "100%",
                 "height": "auto",
@@ -1655,7 +2038,9 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
                 "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
             })
 
+            update_spatial_plot(spatial_image)
             print("--- Spatial plot saved to DeepHepatoScope_results/spatial_plot.png ---")
+            update_progress("70", "Spatial plotting complete. Moving onto dimensionality reduction plotting...")
         
         else:
             spatial_image = None
@@ -1698,6 +2083,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             # Encode as base64 for HTML rendering
             encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
             image_src = f"data:image/png;base64,{encoded_image}"
+            store_umap_image = image_src
             umap_image = html.Img(src=image_src, style={
                 "maxWidth": "100%",
                 "height": "auto",
@@ -1705,7 +2091,9 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
                 "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
             })
 
+            update_umap_plot(umap_image)
             print("--- UMAP plot saved to DeepHepatoScope_results/umap_plot.png ---")
+            update_progress("80", "UMAP plotting complete. Moving onto tSNE plotting (if requested)...")
 
         if not target_data_settings.get("calculation"):
             tsne_image = None
@@ -1739,6 +2127,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             # Encode as base64 for HTML rendering
             encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
             image_src = f"data:image/png;base64,{encoded_image}"
+            store_tsne_image = image_src
             tsne_image = html.Img(src=image_src, style={
                 "maxWidth": "100%",
                 "height": "auto",
@@ -1746,7 +2135,9 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
                 "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
             })
 
+            update_tsne_plot(tsne_image)
             print("--- TSNE plot saved to DeepHepatoScope_results/tsne_plot.png ---")
+            update_progress("90", "tSNE plotting complete. Wrapping up...")
         
         normal_button = html.Span([
             html.I(className="bi bi-play-circle-fill me-2"),
@@ -1755,7 +2146,8 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
 
         print(" ")
         print("Returning, check terminal for success message...")
-        return "Model trained successfully. CSV of annotations and all plots (spatial, UMAP/tSNE) have been saved to files.", {"color": "darkgreen"}, spatial_image, umap_image, tsne_image, None, {'output_df_str': output_df_str, 'predicted_labels_list': predicted_labels_list}, normal_button #{'target_data_sub': target_data_sub_dict}, {'output_df_str': output_df_str}
+        update_progress("100", "Analysis complete!")
+        return "Model trained successfully. CSV of annotations and all plots (spatial, UMAP/tSNE) have been saved to the DeepHepatoScope_results folder.", {"color": "darkgreen"}, spatial_image, umap_image, tsne_image, None, {'output_df_str': output_df_str, 'predicted_labels_list': predicted_labels_list}, store_annotations, store_spatial_image, store_umap_image, store_tsne_image, {"display": "block"}, {"display": "block"}, normal_button #{'target_data_sub': target_data_sub_dict}, {'output_df_str': output_df_str}
 
     except Exception as e:
         full_traceback = traceback.format_exc()
