@@ -2053,8 +2053,10 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
 
         if not target_data_settings.get("calculation"):
             umap_image = None
+            store_umap_image = None
         elif 'umap' not in target_data_settings["calculation"]:
             umap_image = None
+            store_umap_image = None
         elif 'umap' in target_data_settings["calculation"] and "X_UMAP" not in target_data_full.obsm:
             print(" ")
             print("Calculating UMAP...")
@@ -2097,8 +2099,10 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
 
         if not target_data_settings.get("calculation"):
             tsne_image = None
+            store_tsne_image = None
         elif 'tsne' not in target_data_settings["calculation"]:
             tsne_image = None
+            store_tsne_image = None
         elif 'tsne' in target_data_settings["calculation"] and "X_TSNE" not in target_data_full.obsm:
             print(" ")
             print("Calculating TSNE...")
