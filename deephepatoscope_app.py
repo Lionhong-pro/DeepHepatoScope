@@ -1850,7 +1850,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         X_dense = normalize(X_dense, axis=1, norm='l2')
         adata_spatial.X = X_dense
         #print("Running...")
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
         print("Using device: ", device)
 
         print("Loading model...")
