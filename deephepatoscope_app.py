@@ -248,6 +248,7 @@ app.layout = dbc.Container([
     dcc.Store(id="target-data-sub-store", storage_type="memory"),
     dcc.Store(id="annotations-store", storage_type="memory"),
     dcc.Store(id="spatial-plot-store", storage_type="memory"),
+    dcc.Store(id="pie-plot-store", storage_type="memory"),
     dcc.Store(id="umap-plot-store", storage_type="memory"),
     dcc.Store(id="tsne-plot-store", storage_type="memory"),
     dcc.Store(id="gcn-plot-store", storage_type="memory"),
@@ -557,9 +558,25 @@ dbc.Card([
     dbc.CardBody([
         dbc.Row([
             dbc.Col([
-                html.Div(id="spatial-plot-container"),
-                html.Div(id="umap-plot-container"),
-                html.Div(id="tsne-plot-container"),
+                dbc.Row([
+                    # Left column: spatial plot
+                    dbc.Col(
+                        html.Div(id="spatial-plot-container"),
+                        width=6
+                    ),
+
+                    # Right column: pie plot
+                    dbc.Col(
+                        html.Div(id="pie-plot-container"),
+                        width=6
+                    ),
+                ]),
+
+                # Then your next row for UMAP and t-SNE
+                dbc.Row([
+                    dbc.Col(html.Div(id="umap-plot-container")),
+                    dbc.Col(html.Div(id="tsne-plot-container")),
+                ]),
 
                 dcc.Graph(id="spatial-plot", style={'display': 'none','height':'600px','width':'600px'}),
                 dcc.Graph(id="umap-plot", style={'display': 'none','height':'600px','width':'600px'}),
@@ -708,6 +725,10 @@ def update_spatial_plot(plot):
     set_props("spatial-plot-container", {"children": plot})
     time.sleep(0.5)  # Ensure update is processed
 
+def update_pie_plot(plot):
+    set_props("pie-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
 def update_umap_plot(plot):
     set_props("umap-plot-container", {"children": plot})
     time.sleep(0.5)  # Ensure update is processed
@@ -753,12 +774,13 @@ def download_csv(n_clicks, data):
     Output("download-store", "data", allow_duplicate=True),
     Input("download-analysis-plots", "n_clicks"),
     State("spatial-plot-store", "data"),
+    State("pie-plot-store", "data"),
     State("umap-plot-store", "data"),
     State("tsne-plot-store", "data"),
     prevent_initial_call=True
 )
-def download_plots(n_clicks, spatial_data, umap_data, tsne_data):
-    if not any([spatial_data, umap_data, tsne_data]):
+def download_plots(n_clicks, spatial_data, pie_data, umap_data, tsne_data):
+    if not any([spatial_data, pie_data, umap_data, tsne_data]):
         return dash.no_update
 
     # Helper: Decode base64 image
@@ -773,6 +795,8 @@ def download_plots(n_clicks, spatial_data, umap_data, tsne_data):
     with zipfile.ZipFile(zip_buffer, "w") as zf:
         if spatial_data:
             zf.writestr("spatial_plot.png", decode_image(spatial_data))
+        if pie_data:
+            zf.writestr("celltype_composition_pie_plot.png", decode_image(pie_data))
         if umap_data:
             zf.writestr("umap_plot.png", decode_image(umap_data))
         if tsne_data:
@@ -1766,6 +1790,7 @@ def start_analysis_ui(n_clicks):
     Output("classification-status", "children"),
     Output("classification-status", "style"),
     Output("spatial-plot-container", "children"),
+    Output("pie-plot-container", "children"),
     Output("umap-plot-container", "children"),
     Output("tsne-plot-container", "children"),
     Output("target-data-sub-store", "data", allow_duplicate=True),
@@ -1773,6 +1798,7 @@ def start_analysis_ui(n_clicks):
 
     Output("annotations-store", "data", allow_duplicate=True),
     Output("spatial-plot-store", "data", allow_duplicate=True),
+    Output("pie-plot-store", "data", allow_duplicate=True),
     Output("umap-plot-store", "data", allow_duplicate=True),
     Output("tsne-plot-store", "data", allow_duplicate=True),
 
@@ -2047,6 +2073,61 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             print("--- WARNING: No spatial coordinates found! ---")
             print("--- WARNING: You are either working with scRNA-Seq data (in which case this is intended), our your spatial coordinates columns are not labelled X_spatial and Y_spatial ---")
             print("--- WARNING: Skipping spatial plot! ---")
+        
+        # Count occurrences of each predicted label
+        label_counts = target_data_full.obs["Predicted_Class"].value_counts()
+
+        # Match colors to labels (default gray for missing ones)
+        colors = [predefined_colors.get(label, "#cccccc") for label in label_counts.index]
+
+        # Plot pie chart
+        # Create pie chart
+        fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
+        # Temporarily compute percentages but don't display them on the pie
+        wedges, texts, autotexts = ax.pie(
+            label_counts.values,   # no parentheses if it's already a Series
+            labels=None,           # no labels on the pie itself
+            colors=colors[:len(label_counts)],
+            autopct='%1.1f%%',     # used internally to get pct text
+            startangle=90,
+            counterclock=False
+        )
+
+        # Remove percentage texts from the pie
+        for t in autotexts:
+            t.set_visible(False)
+        # Add legend on the right with class names and percentages
+        labels = [
+            f"{cls} ({pct.get_text()})"
+            for cls, pct in zip(label_counts.keys(), autotexts)
+        ]
+        ax.legend(
+            wedges,
+            labels,
+            title="Classes",
+            loc="center left",
+            bbox_to_anchor=(1, 0.5),
+            fontsize=10
+        )
+        plt.tight_layout()
+        plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "celltype_composition_pie_plot.png"), format="png", dpi=300, bbox_inches="tight")
+        # Save to in-memory buffer instead of file
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+        buffer.seek(0)
+        plt.close()
+
+        # Encode as base64 for HTML rendering
+        encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+        image_src = f"data:image/png;base64,{encoded_image}"
+        store_pie_image = image_src
+        pie_image = html.Img(src=image_src, style={
+            "maxWidth": "100%",
+            "height": "auto",
+            "borderRadius": "10px",
+            "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+        })
+        update_spatial_plot(pie_image)
 
         sc.set_figure_params(dpi=600)
         sc.set_figure_params(figsize=(10, 8))
@@ -2151,7 +2232,7 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
         print(" ")
         print("Returning, check terminal for success message...")
         update_progress("100", "Analysis complete!")
-        return "Model trained successfully. CSV of annotations and all plots (spatial, UMAP/tSNE) have been saved to the DeepHepatoScope_results folder.", {"color": "darkgreen"}, spatial_image, umap_image, tsne_image, None, {'output_df_str': output_df_str, 'predicted_labels_list': predicted_labels_list}, store_annotations, store_spatial_image, store_umap_image, store_tsne_image, {"display": "block"}, {"display": "block"}, normal_button #{'target_data_sub': target_data_sub_dict}, {'output_df_str': output_df_str}
+        return "Model trained successfully. CSV of annotations and all plots (spatial, UMAP/tSNE) have been saved to the DeepHepatoScope_results folder.", {"color": "darkgreen"}, spatial_image, pie_image, umap_image, tsne_image, None, {'output_df_str': output_df_str, 'predicted_labels_list': predicted_labels_list}, store_annotations, store_spatial_image, store_pie_image, store_umap_image, store_tsne_image, {"display": "block"}, {"display": "block"}, normal_button #{'target_data_sub': target_data_sub_dict}, {'output_df_str': output_df_str}
 
     except Exception as e:
         full_traceback = traceback.format_exc()
