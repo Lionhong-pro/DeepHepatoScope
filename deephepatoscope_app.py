@@ -242,6 +242,26 @@ class TransformerClassifier(nn.Module):
         # x: [batch size, 128]
         return self.fc(x).float(), attn_1_weights
 
+import requests, pandas as pd, time, random
+
+def enrichr_go(gene_list):
+    ENRICHR_URL = "https://maayanlab.cloud/Enrichr"
+    """Submit genes to Enrichr and return GO Biological Process enrichment."""
+    payload = {"list": "\n".join(gene_list), "description": "batch_test"}
+    add_resp = requests.post(f"{ENRICHR_URL}/addList", files=payload)
+    user_list_id = add_resp.json()["userListId"]
+
+    params = {"userListId": user_list_id, "backgroundType": "GO_Biological_Process_2023"}
+    resp = requests.get(f"{ENRICHR_URL}/enrich", params=params)
+    results = resp.json()["GO_Biological_Process_2023"]
+
+    cols = [
+        "Rank", "Term", "P-value", "Z-score", "Combined Score",
+        "Genes", "Adjusted P-value", "Old P-value", "Old Adjusted P-value"
+    ]
+    df = pd.DataFrame(results, columns=cols)
+    return df[df["Adjusted P-value"] <= 0.05].head(5)
+
 # App layout
 app.layout = dbc.Container([
     dcc.Store(id="target-data-store", storage_type="memory"),
@@ -254,6 +274,7 @@ app.layout = dbc.Container([
     dcc.Store(id="gcn-plot-store", storage_type="memory"),
     dcc.Store(id="bar-plot-store", storage_type="memory"),
     dcc.Store(id="heatmap-plot-store", storage_type="memory"),
+    dcc.Store(id="enrichr-plot-store", storage_type="memory"),
     dcc.Store(id="module-genes-store", storage_type="memory"),
     dcc.Download(id="download-store"),
     
@@ -690,7 +711,8 @@ dbc.Card([
             html.Div([
                 html.Div(id="gcn-plot-container"),
                 html.Div(id="bar-plot-container"),
-                html.Div(id="heatmap-plot-container")
+                html.Div(id="heatmap-plot-container"),
+                html.Div(id="enrichr-plot-container")
             ], style={
                 "width": "60%",
                 "margin": "0 auto",
@@ -747,6 +769,10 @@ def update_bar_plot(plot):
 
 def update_heatmap_plot(plot):
     set_props("heatmap-plot-container", {"children": plot})
+    time.sleep(0.5)  # Ensure update is processed
+
+def update_enrichr_plot(plot):
+    set_props("enrichr-plot-container", {"children": plot})
     time.sleep(0.5)  # Ensure update is processed
 
     #     dcc.Store(id="annotations-store", storage_type="memory"),
@@ -811,9 +837,10 @@ def download_plots(n_clicks, spatial_data, pie_data, umap_data, tsne_data):
     State("gcn-plot-store", "data"),
     State("bar-plot-store", "data"),
     State("heatmap-plot-store", "data"),
+    State("enrichr-plot-store", "data"),
     prevent_initial_call=True
 )
-def download_plots(n_clicks, gcn_data, bar_data, heatmap_data):
+def download_plots(n_clicks, gcn_data, bar_data, heatmap_data, enrichr_data):
     if not any([gcn_data, bar_data, heatmap_data]):
         return dash.no_update
 
@@ -833,6 +860,9 @@ def download_plots(n_clicks, gcn_data, bar_data, heatmap_data):
             zf.writestr("bar_plot.png", decode_image(bar_data))
         if heatmap_data:
             zf.writestr("heatmap_plot.png", decode_image(heatmap_data))
+        if enrichr_data:
+            zf.writestr("enrichr_plot.png", decode_image(enrichr_data))
+
 
     zip_buffer.seek(0)
     return dcc.send_bytes(zip_buffer.getvalue(), "gcn_plots.zip")
@@ -1026,11 +1056,13 @@ def start_analysis_ui(n_clicks):
     Output("gcn-plot-container", "children"),
     Output("bar-plot-container", "children"),
     Output("heatmap-plot-container", "children"),
+    Output("enrichr-plot-container", "children"),
     Output("cluster-table-container", "children"),
 
     Output("gcn-plot-store", "data", allow_duplicate=True),
     Output("bar-plot-store", "data", allow_duplicate=True),
     Output("heatmap-plot-store", "data", allow_duplicate=True),
+    Output("enrichr-plot-store", "data", allow_duplicate=True),
     Output("module-genes-store", "data", allow_duplicate=True),
 
     Output("download-module-genes", "style"),
@@ -1756,6 +1788,96 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
             # )
         ])
 
+        all_results = []
+        for cl, genes in cluster_genes.items():
+            print(f"Running enrichment for cluster {cl} with {len(genes)} genes...")
+            try:
+                df = enrichr_go(genes)
+                df["module"] = cl  # add cluster/module column
+                all_results.append(df)
+            except Exception as e:
+                print(f"⚠️ Cluster {cl} failed: {e}")
+        if all_results:
+            combined_results = pd.concat(all_results, ignore_index=True)
+        else:
+            combined_results = pd.DataFrame()
+
+
+        # ---------------------------
+        # Step 1: Load your data
+        # ---------------------------
+        # file_path = "/content/drive/My Drive/xenium_paths_v2.xlsx"
+        # df = pd.read_excel(file_path)
+
+        # Rename 'Module' column to 'module' for consistency
+        # df = df.rename(columns={'Module': 'module'})
+        combined_results['module'] = pd.to_numeric(combined_results['module'])
+
+        # Compute -log10(Adjusted P-value)
+        combined_results['log_adj_p'] = -np.log10(combined_results['Adjusted P-value'])
+
+        # ---------------------------
+        # Step 2: Filter and get top 5 per module
+        # ---------------------------
+        df_filtered = combined_results
+        df_filtered = df_filtered.sort_values(by=['module', 'log_adj_p'], ascending=[True, False])
+        df_top5 = df_filtered.groupby('module').head(5).reset_index(drop=True)
+
+        # ---------------------------
+        # Step 3: Map module colors
+        # ---------------------------
+        module_colors = {mod: cluster_colors[mod] for mod in df_top5['module'].unique() if mod in cluster_colors}
+        df_top5['Color'] = df_top5['module'].map(module_colors)
+
+        # ---------------------------
+        # Step 4: Plot high-res GSEA-style barplot
+        # ---------------------------
+        plt.figure(figsize=(12, 10), dpi=1400)  # VERY high DPI
+
+        df_top5['display_label'] = df_top5['Term']
+        y_labels = df_top5['display_label']
+        x_values = df_top5['log_adj_p']
+        y_pos = np.arange(len(df_top5)) * 1.2
+
+        bars = plt.barh(y_pos, x_values, color=df_top5['Color'], edgecolor='black', height=0.8)
+
+        plt.yticks(y_pos, y_labels, fontsize=9)           # small y-axis labels
+        plt.xlabel('-log10(Adjusted P-value)', fontsize=12) # smaller x-axis label
+        ax.tick_params(axis='x', labelsize=10)  # tick numbers bigger
+        plt.gca().invert_yaxis()
+
+        # ---------------------------
+        # Step 5: Remove legend & title
+        # ---------------------------
+        # Do not add legend
+        plt.title('')  # remove title
+
+        plt.tight_layout()
+        # plt.savefig('gsea_barplot_top5_highres.png', bbox_inches='tight', dpi=1700)
+        # plt.show()
+        # print("High-resolution GSEA-style barplot saved as gsea_barplot_top5_highres.png")
+        plt.savefig(os.path.join(os.path.dirname(__file__), "DeepHepatoScope_results", "enrichr_plot.png"), format="png", dpi=300, bbox_inches="tight")
+
+        # Save to in-memory buffer instead of file
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format="png", dpi=300, bbox_inches="tight")
+        buffer.seek(0)
+        plt.close()
+
+        # Encode as base64 for HTML rendering
+        encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+        image_src = f"data:image/png;base64,{encoded_image}"
+        store_enrichr_image = image_src
+        enrichr_plot_image = html.Img(src=image_src, style={
+            "maxWidth": "100%",
+            "height": "auto",
+            "borderRadius": "10px",
+            "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
+        })
+
+        update_enrichr_plot(enrichr_plot_image)
+        print("--- Functional enrichment plot saved to DeepHepatoScope_results/enrichr_plot.png ---")
+
         normal_button = html.Span([
             html.I(className="bi bi-play-circle-fill me-2"),
             "4. Perform Gene Coexpression Network (GCN) Analysis"
@@ -1764,7 +1886,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         print(" ")
         print("Returning, check terminal for success message...")
         update_progress_gcn("100", " ")
-        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to the DeepHepatoScope_results folder. Check terminal for Enrichr instructions.", {"color": "darkgreen"}, gcn_plot_image, bar_plot_image, heatmap_plot_image, table_component, store_gcn_image, store_bar_image, store_heatmap_image, store_module_genes, {"display": "block"}, {"display": "block"}, normal_button
+        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to the DeepHepatoScope_results folder. Check terminal for Enrichr instructions.", {"color": "darkgreen"}, gcn_plot_image, bar_plot_image, heatmap_plot_image, enrichr_plot_image, table_component, store_gcn_image, store_bar_image, store_heatmap_image, store_enrichr_image, store_module_genes, {"display": "block"}, {"display": "block"}, normal_button
     except Exception as e:
         full_traceback = traceback.format_exc()
         return f"Error: {e}\nDetails:\n{full_traceback}", {"color": "red"}, None, None, None
@@ -2127,7 +2249,8 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
             "borderRadius": "10px",
             "boxShadow": "0 4px 12px rgba(0,0,0,0.15)"
         })
-        update_spatial_plot(pie_image)
+        update_pie_plot(pie_image)
+        print("--- Cell type compostion pie chart saved to DeepHepatoScope_results/celltype_composition_pie_plot.png ---")
 
         sc.set_figure_params(dpi=600)
         sc.set_figure_params(figsize=(10, 8))
