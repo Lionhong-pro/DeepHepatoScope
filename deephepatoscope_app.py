@@ -1,6 +1,10 @@
 #pip install dash scanpy scikit-learn umap-learn numpy pandas plotly pillow seaborn matplotlib scipy gseapy statsmodels tensorflow keras
+# import multiprocessing
+# multiprocessing.set_start_method("spawn", force=True)
+
 # import anndata as adata
 import os
+os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES" #Need this for Apple
 import pickle
 import dash
 from dash import dcc, html, Input, Output, State, callback_context, DiskcacheManager, set_props, dash_table
@@ -276,6 +280,7 @@ app.layout = dbc.Container([
     dcc.Store(id="heatmap-plot-store", storage_type="memory"),
     dcc.Store(id="enrichr-plot-store", storage_type="memory"),
     dcc.Store(id="module-genes-store", storage_type="memory"),
+    dcc.Store(id="pathways-store", storage_type="memory"),
     dcc.Download(id="download-store"),
     
     # Header Section
@@ -660,7 +665,7 @@ dbc.Card([
                     dbc.Col([
                     dbc.Button([
                         html.I(className="bi bi-download me-2"),
-                        "Download module genes as .csv"
+                        "Download module genes and pathways as .csv"
                     ],
                     id="download-module-genes",
                     color="success",
@@ -871,13 +876,24 @@ def download_plots(n_clicks, gcn_data, bar_data, heatmap_data, enrichr_data):
     Output("download-store", "data", allow_duplicate=True),
     Input("download-module-genes", "n_clicks"),
     State("module-genes-store", "data"),
+    State("pathways-store", "data"),
     prevent_initial_call=True
 )
-def download_csv(n_clicks, data):
-    if not data:
+def download_csv(n_clicks, data1, data2):
+    if not data1:
         return dash.no_update
-    df = pd.DataFrame(data)
-    return dcc.send_data_frame(df.to_csv, "module_genes.csv", index=False)
+    if not data2:
+        return dash.no_update
+    df1 = pd.DataFrame(data1)
+    df2 = pd.DataFrame(data2)
+    # Create an in-memory zip
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Write both CSVs to the zip file
+        zf.writestr("module_genes.csv", df1.to_csv(index=False))
+        zf.writestr("enrichr_pathways.csv", df2.to_csv(index=False))
+    buffer.seek(0)
+    return dcc.send_bytes(buffer.getvalue(), "module_genes_and_pathways.zip")
 
 # Callbacks
 #upload scrna data
@@ -1064,6 +1080,7 @@ def start_analysis_ui(n_clicks):
     Output("heatmap-plot-store", "data", allow_duplicate=True),
     Output("enrichr-plot-store", "data", allow_duplicate=True),
     Output("module-genes-store", "data", allow_duplicate=True),
+    Output("pathways-store", "data", allow_duplicate=True),
 
     Output("download-module-genes", "style"),
     Output("download-gcn-plots", "style"),
@@ -1822,6 +1839,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         df_filtered = combined_results
         df_filtered = df_filtered.sort_values(by=['module', 'log_adj_p'], ascending=[True, False])
         df_top5 = df_filtered.groupby('module').head(5).reset_index(drop=True)
+        store_pathways = df_top5.to_dict('records')
 
         # ---------------------------
         # Step 3: Map module colors
@@ -1886,7 +1904,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         print(" ")
         print("Returning, check terminal for success message...")
         update_progress_gcn("100", " ")
-        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to the DeepHepatoScope_results folder. Check terminal for Enrichr instructions.", {"color": "darkgreen"}, gcn_plot_image, bar_plot_image, heatmap_plot_image, enrichr_plot_image, table_component, store_gcn_image, store_bar_image, store_heatmap_image, store_enrichr_image, store_module_genes, {"display": "block"}, {"display": "block"}, normal_button
+        return "GCN analysis complete. All plots (GCN, cluster composition, correlation heatmap) have been saved to the DeepHepatoScope_results folder. Check terminal for Enrichr instructions.", {"color": "darkgreen"}, gcn_plot_image, bar_plot_image, heatmap_plot_image, enrichr_plot_image, table_component, store_gcn_image, store_bar_image, store_heatmap_image, store_enrichr_image, store_module_genes, store_pathways, {"display": "block"}, {"display": "block"}, normal_button
     except Exception as e:
         full_traceback = traceback.format_exc()
         return f"Error: {e}\nDetails:\n{full_traceback}", {"color": "red"}, None, None, None
