@@ -1066,8 +1066,8 @@ def start_analysis_ui(n_clicks):
     return spinner_content, True, {"start": True}
 
 @app.callback(
-    Output("gcn-status", "children"),
-    Output("gcn-status", "style"),
+    Output("gcn-plot-status", "children"),
+    Output("gcn-plot-status", "style"),
     Output("gcn-plot-container", "children"),
     Output("bar-plot-container", "children"),
     Output("heatmap-plot-container", "children"),
@@ -1148,7 +1148,7 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
             for cell_type, genes in temp_DEGs.items()
         }
 
-        # Your cell type mapping
+        
         cell_types = [
             "B cells",
             "CAFs",
@@ -1962,6 +1962,7 @@ def start_analysis_ui(n_clicks):
     ],
     prevent_initial_call=True
 )
+
 def train_model(n_clicks, selected_button, model_check, model_settings, target_data_settings, target_data_store, custom_input_store):
     try:
         print("Inference pipeline started. Importing modules...")
