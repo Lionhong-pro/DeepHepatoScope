@@ -3,7 +3,7 @@
 ## Overview
 DeepHepatoScope is a transformer-attention neural network model made for cell type annotation of HD Spatial Transcriptomics data of Hepatocellular Carcinoma.
 
-![](./DeepHepatoScope_methods.png)
+![](./DHS_GA_Small.png)
 
 ## Prerequisites
 DeepHepatoScope is trained on Python version  `3.12.8`.

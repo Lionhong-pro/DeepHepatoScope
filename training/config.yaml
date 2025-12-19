@@ -1,0 +1,12 @@
+n_genes: 850
+train_batch_size: 128
+load_weights: false
+n_epochs: 300
+
+save_by_epoch: false
+save_frequency: 10
+
+weights_name: "PATH.pt"
+cm_name: "PATH.npy"
+attn_name: "PATH.npy"
+seurat_expression_data: "PATH.h5ad"
