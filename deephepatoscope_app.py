@@ -179,7 +179,7 @@ class SelfAttention(nn.Module):
         self.Key = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.Value = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
-    @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    # @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
     def forward(self, x):
         # x: [batch size, seq len, hidden dim]
         query = self.Query(x)
@@ -223,7 +223,7 @@ class TransformerClassifier(nn.Module):
 
         self.dropout = nn.Dropout(0.25)
 
-    @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    # @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
     def forward(self, x):
         # x: [batch size, seq len]
         x = x.unsqueeze(-1)
@@ -566,7 +566,7 @@ app.layout = dbc.Container([
                     "display": "none"
                 })])]),
 
-                html.P(id="gcn-status", className="mt-auto mb-0", style={"color": "black", "fontWeight": "500"})
+                html.P(id="gcn-analysis-status", className="mt-auto mb-0", style={"color": "black", "fontWeight": "500"})
             ], width=12, lg=6, style={"display": "flex", "flexDirection": "column"})
         ]),
 
@@ -645,7 +645,7 @@ dbc.Card([
                     html.Progress(id="gcn-progress-bar", value="0", max="100",
                                 style={"width": "100%"}, className="mt-3"),
                     html.Div(id="gcn-progress-text"),
-                    html.Div(id="output", className="mt-3"),
+                    html.Div(id="gcn-output", className="mt-3"),
                     dcc.Store(id="run-network-trigger", storage_type="memory"),
                     dbc.Alert([
                         html.I(className="bi bi-info-circle-fill me-2"),
@@ -697,7 +697,7 @@ dbc.Card([
                         "display": "none"
                     })
                     ]),
-                    html.P(id="gcn-status", className="mt-auto mb-0",
+                    html.P(id="gcn-plot-status", className="mt-auto mb-0",
                         style={"color": "black", "fontWeight": "500"})])
                 ], width=12, lg=6, style={"display": "flex", "flexDirection": "column"})
             ])
