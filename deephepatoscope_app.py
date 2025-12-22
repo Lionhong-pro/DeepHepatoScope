@@ -524,7 +524,6 @@ app.layout = dbc.Container([
                 }),
                 html.Progress(id="train-progress-bar", value="0", max="100", style={"width": "100%"}, className="mt-3"),
                 html.Div(id="train-progress-text"),
-                html.Div(id="output", className="mt-3"),
                 dcc.Store(id="run-train-trigger", storage_type="memory")
             ], width=12, lg=6),
 
@@ -646,7 +645,6 @@ dbc.Card([
                     html.Progress(id="gcn-progress-bar", value="0", max="100",
                                 style={"width": "100%"}, className="mt-3"),
                     html.Div(id="gcn-progress-text"),
-                    html.Div(id="output", className="mt-3"),
                     dcc.Store(id="run-network-trigger", storage_type="memory"),
                     dbc.Alert([
                         html.I(className="bi bi-info-circle-fill me-2"),
