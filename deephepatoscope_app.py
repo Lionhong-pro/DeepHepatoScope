@@ -1125,7 +1125,14 @@ def gcn_analysis(n_clicks, model_check, target_data_store, target_data_sub_store
         genes = seurat_genes[:]
         update_progress_gcn("10", "Loading data files...")
 
-        adata = sc.read_h5ad(target_data_store["filename"])
+        # adata= sc.read_h5ad(target_data_store["filename"])
+        ext = os.path.splitext(target_data_store["filename"])[1].lower()
+        if ext == ".h5ad":
+            adata = sc.read_h5ad(target_data_store["filename"])
+        elif ext == ".h5":
+            adata = sc.read_10x_h5(target_data_store["filename"])
+        else:
+            raise ValueError(f"Unsupported file type: {ext}")
         sc.pp.normalize_total(adata, target_sum=1e4)
         sc.pp.log1p(adata)
         target_data_full = adata
@@ -1978,7 +1985,14 @@ def train_model(n_clicks, selected_button, model_check, model_settings, target_d
 
         print("Model selected:", model_check)
         # adata_spatial = decode_dict(target_data_store["target_data"])
-        adata_spatial = sc.read_h5ad(target_data_store["filename"])
+        # adata_spatial = sc.read_h5ad(target_data_store["filename"])
+        ext = os.path.splitext(target_data_store["filename"])[1].lower()
+        if ext == ".h5ad":
+            adata_spatial = sc.read_h5ad(target_data_store["filename"])
+        elif ext == ".h5":
+            adata_spatial = sc.read_10x_h5(target_data_store["filename"])
+        else:
+            raise ValueError(f"Unsupported file type: {ext}")
         update_progress("10", "Loading model weights...")
         if model_check=="cosmx":
             #adata_spatial = sc.read_h5ad(r"C:\Users\gnohi\Downloads\ARP2\pub_training\FINAL_codes\CosMx_demo_2775cells_1000genes.h5ad")
